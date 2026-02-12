@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lemmings</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#06050e;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Press Start 2P',monospace;overflow:hidden;color:#c0c0c0}
+#game-wrapper{width:960px;position:relative;user-select:none}
+#header{background:#110e1f;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:8px;border:2px solid #2a2444;border-bottom:1px solid #2a2444;color:#7fefab}
+#header span{display:inline-flex;align-items:center;gap:4px}
+.stat-val{color:#f0e060;min-width:24px;text-align:right}
+#level-name{color:#70c0ff;font-size:9px;letter-spacing:1px}
+#canvas-wrap{position:relative;border:2px solid #2a2444;border-top:none;border-bottom:none;background:#000;overflow:hidden}
+#gameCanvas{width:100%;display:block;image-rendering:pixelated;image-rendering:crisp-edges;cursor:crosshair}
+#minimapCanvas{position:absolute;top:6px;right:6px;border:1px solid #7fefab;opacity:0.85;image-rendering:pixelated;cursor:pointer}
+#toolbar{background:#110e1f;padding:6px 8px;display:flex;align-items:stretch;gap:4px;border:2px solid #2a2444;border-top:1px solid #1a1530}
+.tool-section{display:flex;gap:3px;align-items:stretch}
+.tool-section.abilities{flex:1;justify-content:center}
+.tool-divider{width:1px;background:#2a2444;margin:0 4px}
+.ability-btn{background:#1a1530;border:2px solid #2a2444;color:#8888aa;font-family:'Press Start 2P',monospace;font-size:6px;padding:4px 2px;cursor:pointer;text-align:center;min-width:52px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .15s;position:relative}
+.ability-btn:hover{background:#252040;border-color:#4a4470;color:#bbbbdd}
+.ability-btn.selected{background:#1a2840;border-color:#7fefab;color:#7fefab;box-shadow:0 0 8px rgba(127,239,171,.25)}
+.ability-btn.disabled{opacity:.35;cursor:default;pointer-events:none}
+.ability-btn .ab-icon{font-size:12px;line-height:1;height:16px;display:flex;align-items:center}
+.ability-btn .ab-count{color:#f0e060;font-size:7px}
+.ctrl-btn{background:#1a1530;border:2px solid #2a2444;color:#8888aa;font-family:'Press Start 2P',monospace;font-size:10px;padding:4px 8px;cursor:pointer;transition:all .15s;min-width:36px}
+.ctrl-btn:hover{background:#252040;border-color:#4a4470;color:#bbbbdd}
+.ctrl-btn.active{background:#2a1a1a;border-color:#ff6644;color:#ff6644}
+.rate-display{color:#f0e060;font-size:8px;padding:0 4px;display:flex;align-items:center}
+#overlay{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(6,5,14,.92);z-index:10;pointer-events:auto}
+#overlay.hidden{display:none}
+#overlay h1{font-size:28px;color:#7fefab;text-shadow:0 0 20px rgba(127,239,171,.5);margin-bottom:20px;letter-spacing:3px}
+#overlay h2{font-size:14px;color:#70c0ff;margin-bottom:16px}
+#overlay p{font-size:8px;color:#8888aa;margin:4px 0;line-height:1.8}
+#overlay .big-stat{font-size:18px;color:#f0e060;margin:8px 0}
+.overlay-btn{background:#1a2840;border:2px solid #7fefab;color:#7fefab;font-family:'Press Start 2P',monospace;font-size:10px;padding:10px 24px;cursor:pointer;margin:8px 4px;transition:all .2s;letter-spacing:1px}
+.overlay-btn:hover{background:#254050;box-shadow:0 0 12px rgba(127,239,171,.3)}
+.overlay-btn.secondary{border-color:#4a4470;color:#8888aa}
+.overlay-btn.secondary:hover{border-color:#70c0ff;color:#70c0ff}
+.level-btn{background:#1a1530;border:2px solid #2a2444;color:#8888aa;font-family:'Press Start 2P',monospace;font-size:8px;padding:8px 12px;cursor:pointer;margin:4px;transition:all .15s;min-width:100px}
+.level-btn:hover{background:#252040;border-color:#7fefab;color:#7fefab}
+.level-btn.locked{opacity:.3;cursor:default;pointer-events:none}
+.scanlines{position:absolute;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);pointer-events:none;z-index:5}
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <div id="header">
+    <span>OUT:<span class="stat-val" id="s-out">0</span></span>
+    <span>IN:<span class="stat-val" id="s-in">0</span></span>
+    <span id="level-name">LEMMINGS</span>
+    <span>NEED:<span class="stat-val" id="s-need">0</span></span>
+    <span>SAVED:<span class="stat-val" id="s-saved">0</span></span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <canvas id="minimapCanvas" width="200" height="50"></canvas>
+    <div class="scanlines"></div>
+  </div>
+  <div id="toolbar">
+    <div class="tool-section">
+      <button class="ctrl-btn" id="btn-rate-down" title="Slower release">-</button>
+      <span class="rate-display" id="rate-val">50</span>
+      <button class="ctrl-btn" id="btn-rate-up" title="Faster release">+</button>
+    </div>
+    <div class="tool-divider"></div>
+    <div class="tool-section abilities" id="ability-bar"></div>
+    <div class="tool-divider"></div>
+    <div class="tool-section">
+      <button class="ctrl-btn" id="btn-pause" title="Pause">&#9646;&#9646;</button>
+      <button class="ctrl-btn" id="btn-fast" title="Fast forward">&#9654;&#9654;</button>
+      <button class="ctrl-btn" id="btn-nuke" title="Nuke!">&#9762;</button>
+    </div>
+  </div>
+  <div id="overlay">
+    <div id="overlay-content"></div>
+  </div>
+</div>
+
+<script>
+// ===================== CONSTANTS =====================
+const W=1600, H=400, VW=800, VH=400;
+const MAX_FALL=62;
+const ABILITIES=['Climber','Floater','Bomber','Blocker','Builder','Basher','Digger','Miner'];
+const AB_ICONS=['\u2191','\u2602','\u2622','\u2716','\u2692','\u2694','\u26CF','\u26A0'];
+const S={WALK:0,FALL:1,CLIMB:2,FLOAT:3,BUILD:4,BASH:5,DIG:6,MINE:7,BLOCK:8,SPLAT:9,EXIT:10,DEAD:11};
+
+// ===================== AUDIO =====================
+class SFX {
+  constructor(){this.ctx=null;this.on=true}
+  init(){if(!this.ctx)this.ctx=new(window.AudioContext||window.webkitAudioContext)()}
+  resume(){if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume()}
+  play(type){
+    if(!this.on||!this.ctx)return;
+    const c=this.ctx,t=c.currentTime,g=c.createGain();
+    g.connect(c.destination);
+    let o;
+    switch(type){
+      case'pop':
+        o=c.createOscillator();o.connect(g);o.type='sine';
+        o.frequency.setValueAtTime(600,t);o.frequency.exponentialRampToValueAtTime(200,t+.08);
+        g.gain.setValueAtTime(.2,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);
+        o.start(t);o.stop(t+.1);break;
+      case'assign':
+        o=c.createOscillator();o.connect(g);o.type='square';
+        o.frequency.setValueAtTime(880,t);o.frequency.setValueAtTime(1100,t+.04);
+        g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);
+        o.start(t);o.stop(t+.1);break;
+      case'explode':{
+        const buf=c.createBuffer(1,c.sampleRate*.3|0,c.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(c.sampleRate*.08));
+        const s=c.createBufferSource();s.buffer=buf;s.connect(g);
+        g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);
+        s.start(t);break}
+      case'saved':
+        o=c.createOscillator();o.connect(g);o.type='sine';
+        o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(659,t+.06);o.frequency.setValueAtTime(784,t+.12);
+        g.gain.setValueAtTime(.15,t);g.gain.exponentialRampToValueAtTime(.001,t+.25);
+        o.start(t);o.stop(t+.25);break;
+      case'splat':{
+        const buf=c.createBuffer(1,c.sampleRate*.15|0,c.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(c.sampleRate*.03));
+        const s=c.createBufferSource();s.buffer=buf;s.connect(g);
+        g.gain.setValueAtTime(.2,t);g.gain.exponentialRampToValueAtTime(.001,t+.15);
+        s.start(t);break}
+      case'build':
+        o=c.createOscillator();o.connect(g);o.type='triangle';
+        o.frequency.setValueAtTime(300,t);o.frequency.exponentialRampToValueAtTime(400,t+.05);
+        g.gain.setValueAtTime(.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.06);
+        o.start(t);o.stop(t+.06);break;
+      case'dig':{
+        const buf=c.createBuffer(1,c.sampleRate*.04|0,c.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*.3*Math.exp(-i/(c.sampleRate*.01));
+        const s=c.createBufferSource();s.buffer=buf;s.connect(g);
+        g.gain.setValueAtTime(.08,t);s.start(t);break}
+      case'win':
+        o=c.createOscillator();o.connect(g);o.type='square';
+        o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(659,t+.1);
+        o.frequency.setValueAtTime(784,t+.2);o.frequency.setValueAtTime(1047,t+.3);
+        g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);
+        o.start(t);o.stop(t+.5);break;
+      case'lose':
+        o=c.createOscillator();o.connect(g);o.type='sawtooth';
+        o.frequency.setValueAtTime(400,t);o.frequency.exponentialRampToValueAtTime(100,t+.4);
+        g.gain.setValueAtTime(.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);
+        o.start(t);o.stop(t+.5);break;
+      case'tick':
+        o=c.createOscillator();o.connect(g);o.type='square';
+        o.frequency.setValueAtTime(1200,t);
+        g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.03);
+        o.start(t);o.stop(t+.04);break;
+    }
+  }
+}
+const sfx=new SFX();
+
+// ===================== PARTICLES =====================
+class Particle {
+  constructor(x,y,color,vx,vy,life){
+    this.x=x;this.y=y;this.color=color;
+    this.vx=vx||(Math.random()-.5)*3;this.vy=vy||(-Math.random()*2);
+    this.life=life||30+Math.random()*20;this.maxLife=this.life;
+  }
+  update(){this.x+=this.vx;this.y+=this.vy;this.vy+=.08;this.life--;return this.life>0}
+  draw(ctx,sx){
+    const a=this.life/this.maxLife;
+    ctx.globalAlpha=a;ctx.fillStyle=this.color;
+    ctx.fillRect(Math.round(this.x-sx),Math.round(this.y),2,2);
+    ctx.globalAlpha=1;
+  }
+}
+
+// ===================== TERRAIN HELPERS (ImageData based) =====================
+function parseColor(hex){
+  return [(parseInt(hex.slice(1,3),16))||0,(parseInt(hex.slice(3,5),16))||0,(parseInt(hex.slice(5,7),16))||0];
+}
+function clamp(v){return v<0?0:v>255?255:v}
+function tFill(px,td,x,y,w,h,c1,c2){
+  const [r1,g1,b1]=parseColor(c1),[r2,g2,b2]=parseColor(c2);
+  for(let py=y;py<y+h;py++){
+    if(py<0||py>=H)continue;
+    for(let p=x;p<x+w;p++){
+      if(p<0||p>=W)continue;
+      const idx=py*W+p;
+      td[idx]=1;
+      const t=((p^py)*13%7)/7;
+      const n=((Math.random()*14)|0)-7;
+      const i4=idx*4;
+      px[i4]=clamp((r1+((r2-r1)*t)|0)+n);
+      px[i4+1]=clamp((g1+((g2-g1)*t)|0)+n);
+      px[i4+2]=clamp((b1+((b2-b1)*t)|0)+n);
+      px[i4+3]=255;
+    }
+  }
+}
+function tSteel(px,td,x,y,w,h){
+  for(let py=y;py<y+h;py++){
+    if(py<0||py>=H)continue;
+    for(let p=x;p<x+w;p++){
+      if(p<0||p>=W)continue;
+      const idx=py*W+p;
+      td[idx]=2;
+      const n=((Math.random()*12)|0)-6;
+      const base=((p+py)&3)===0?100:85;
+      const v=base+n;
+      const i4=idx*4;
+      px[i4]=clamp(v-10);px[i4+1]=clamp(v);px[i4+2]=clamp(v+15);px[i4+3]=255;
+    }
+  }
+}
+function tGrass(px,td,x,y,w){
+  for(let p=x;p<x+w&&p<W;p++){
+    if(p<0)continue;
+    for(let py=y;py<H-1;py++){
+      const idx=py*W+p;
+      if(td[idx]!==1)continue;
+      if(py>0&&td[idx-W]!==0)continue;
+      // Top of terrain
+      for(let gy=0;gy<3&&py+gy<H;gy++){
+        const gi=(py+gy)*W+p;
+        if(td[gi]!==1)continue;
+        const i4=gi*4;
+        px[i4]=20+((Math.random()*30)|0);
+        px[i4+1]=120+((Math.random()*80)|0);
+        px[i4+2]=10+((Math.random()*20)|0);
+      }
+      // Random grass blade above
+      if(Math.random()<.35&&py>0&&td[idx-W]===0){
+        const gi=idx-W;
+        td[gi]=1;
+        const i4=gi*4;
+        px[i4]=30;px[i4+1]=150+((Math.random()*40)|0);px[i4+2]=20;px[i4+3]=255;
+      }
+      break;
+    }
+  }
+}
+function tNoise(px,td){
+  for(let i=0;i<W*H;i++){
+    if(td[i]===0||Math.random()>.05)continue;
+    const adj=((Math.random()*26)|0)-13;
+    const i4=i*4;
+    px[i4]=clamp(px[i4]+adj);
+    px[i4+1]=clamp(px[i4+1]+adj);
+    px[i4+2]=clamp(px[i4+2]+adj);
+  }
+}
+
+// ===================== LEVELS =====================
+const LEVELS=[
+  { name:"Just Dig!",
+    total:10, need:7, rate:50, time:120,
+    skills:{6:10},
+    entrance:{x:400,y:80}, exit:{x:400,y:285},
+    generate(px,td){
+      // Three earth layers - dig through each (30px thick, 25px gaps = 55px fall < 62 MAX_FALL)
+      tFill(px,td,200,120,400,30,'#5a7a3a','#4a6a2a');
+      tFill(px,td,200,175,400,30,'#5a7a3a','#4a6a2a');
+      tFill(px,td,200,230,400,30,'#5a7a3a','#4a6a2a');
+      // Steel walls on left and right to contain lemmings
+      tSteel(px,td,192,80,8,230);
+      tSteel(px,td,600,80,8,230);
+      // Steel floor spans full width (25px below layer 3, total fall 55 < 62)
+      tSteel(px,td,200,285,400,12);
+      tGrass(px,td,200,120,400);
+      tGrass(px,td,200,175,400);
+      tGrass(px,td,200,230,400);
+      tNoise(px,td);
+    }
+  },
+  { name:"Bridge the Gap",
+    total:15, need:10, rate:50, time:180,
+    skills:{3:2,4:12},
+    entrance:{x:200,y:148}, exit:{x:650,y:178},
+    generate(px,td){
+      // Left platform
+      tFill(px,td,100,180,250,130,'#7a6a3a','#6a5a2a');
+      // Right platform
+      tFill(px,td,500,180,250,130,'#7a6a3a','#6a5a2a');
+      // Steel walls on far sides to contain
+      tSteel(px,td,92,120,8,200);
+      tSteel(px,td,750,120,8,200);
+      // Steel floor under each platform
+      tSteel(px,td,100,310,250,10);
+      tSteel(px,td,500,310,250,10);
+      tGrass(px,td,100,180,250);
+      tGrass(px,td,500,180,250);
+      tNoise(px,td);
+    }
+  },
+  { name:"Bash Street",
+    total:20, need:15, rate:40, time:240,
+    skills:{5:8,6:3,4:4},
+    entrance:{x:120,y:148}, exit:{x:700,y:198},
+    generate(px,td){
+      // Main floor with walls
+      tFill(px,td,50,200,720,110,'#6a5548','#5a4538');
+      // Bash walls rising from floor (blocking the path)
+      tFill(px,td,220,120,25,80,'#8a7560','#7a6550');
+      tFill(px,td,380,120,25,80,'#8a7560','#7a6550');
+      tFill(px,td,540,120,25,80,'#8a7560','#7a6550');
+      // Steel containment walls left and right
+      tSteel(px,td,42,100,8,220);
+      tSteel(px,td,770,100,8,220);
+      // Steel floor
+      tSteel(px,td,50,310,720,10);
+      tGrass(px,td,50,120,170);
+      tGrass(px,td,565,200,205);
+      tNoise(px,td);
+    }
+  },
+  { name:"Over the Top",
+    total:20, need:16, rate:45, time:240,
+    skills:{0:20,1:20,3:2,4:5},
+    entrance:{x:180,y:210}, exit:{x:650,y:338},
+    generate(px,td){
+      // Left ground
+      tFill(px,td,60,250,300,110,'#4a6a5a','#3a5a4a');
+      // Tall wall in center (climb over it)
+      tFill(px,td,400,80,35,280,'#6a6a7a','#5a5a6a');
+      // Right - exit platform (low, float down to it)
+      tFill(px,td,500,340,280,30,'#4a6a5a','#3a5a4a');
+      // Steel containment walls and floors
+      tSteel(px,td,52,200,8,170);
+      tSteel(px,td,780,80,8,300);
+      tSteel(px,td,60,360,340,10);
+      tSteel(px,td,500,370,280,10);
+      tGrass(px,td,60,250,300);
+      tGrass(px,td,500,340,280);
+      tNoise(px,td);
+    }
+  },
+  { name:"The Gauntlet",
+    total:30, need:22, rate:35, time:300,
+    skills:{0:5,1:5,2:2,3:3,4:5,5:5,6:5,7:3},
+    entrance:{x:100,y:58}, exit:{x:750,y:338},
+    generate(px,td){
+      // Section 1: Starting platform & dig down (two thin layers, 30px each)
+      tFill(px,td,30,100,200,30,'#5a7a3a','#4a6a2a');
+      tFill(px,td,30,155,200,30,'#7a6a3a','#6a5a2a');
+      // Section 2: Walk floor & bash through walls
+      tFill(px,td,30,210,400,30,'#6a5548','#5a4538');
+      tFill(px,td,210,160,25,50,'#8a7560','#7a6550');
+      tFill(px,td,320,160,25,50,'#8a7560','#7a6550');
+      // Section 3: Build over gap to section 4
+      tFill(px,td,430,210,30,30,'#6a5548','#5a4538');
+      // Section 4: Mine through diagonal mass
+      tFill(px,td,500,180,200,60,'#6a6a7a','#5a5a6a');
+      // Section 5: Landing, climb wall, float to exit
+      tFill(px,td,500,270,260,30,'#4a6a5a','#3a5a4a');
+      tFill(px,td,710,110,30,190,'#6a6a7a','#5a5a6a');
+      tFill(px,td,600,340,210,30,'#4a6a5a','#3a5a4a');
+      // Steel containment walls and floors
+      tSteel(px,td,22,60,8,250);
+      tSteel(px,td,810,60,8,320);
+      tSteel(px,td,30,240,400,10);
+      tSteel(px,td,500,300,260,10);
+      tSteel(px,td,600,370,210,10);
+      tGrass(px,td,30,100,200);
+      tGrass(px,td,500,270,260);
+      tGrass(px,td,600,340,210);
+      tNoise(px,td);
+    }
+  }
+];
+
+// ===================== LEMMING CLASS =====================
+class Lem {
+  constructor(x,y){
+    this.x=x;this.y=y;this.dir=1;
+    this.state=S.FALL;this.frame=0;this.fallDist=0;
+    this.isClimber=false;this.isFloater=false;
+    this.bomberTimer=0;this.bomberSec=0;
+    this.buildCount=0;this.buildFrame=0;
+    this.bashFrame=0;this.digFrame=0;this.mineFrame=0;
+    this.splatFrame=0;this.exitFrame=0;
+    this.dead=false;this.saved=false;this.active=true;
+  }
+}
+
+// ===================== GAME =====================
+class Game {
+  constructor(){
+    this.canvas=document.getElementById('gameCanvas');
+    this.ctx=this.canvas.getContext('2d');
+    this.miniCanvas=document.getElementById('minimapCanvas');
+    this.miniCtx=this.miniCanvas.getContext('2d');
+    this.terrainCanvas=document.createElement('canvas');
+    this.terrainCanvas.width=W;this.terrainCanvas.height=H;
+    this.tCtx=this.terrainCanvas.getContext('2d');
+    this.terrainData=new Uint8Array(W*H);
+    // Pre-allocate sky gradient
+    this.skyCanvas=document.createElement('canvas');
+    this.skyCanvas.width=VW;this.skyCanvas.height=VH;
+    const sc=this.skyCanvas.getContext('2d');
+    const grad=sc.createLinearGradient(0,0,0,VH);
+    grad.addColorStop(0,'#0c0820');grad.addColorStop(.5,'#161040');grad.addColorStop(1,'#0a0618');
+    sc.fillStyle=grad;sc.fillRect(0,0,VW,VH);
+    // Stars
+    sc.fillStyle='rgba(255,255,255,0.3)';
+    for(let i=0;i<40;i++){
+      sc.fillRect((i*137+i*i*31)%VW,(i*89+i*i*17)%200,((i*53)%3===0)?2:1,((i*53)%3===0)?2:1);
+    }
+    this.lemmings=[];
+    this.particles=[];
+    this.scrollX=0;
+    this.mouseX=0;this.mouseY=0;
+    this.selectedAbility=-1;
+    this.paused=false;this.fastMode=false;
+    this.gameState='title';
+    this.currentLevel=0;
+    this.releaseRate=50;
+    this.releaseTimer=0;
+    this.lemmingsOut=0;this.lemmingsSaved=0;
+    this.levelTime=0;this.maxTime=0;
+    this.skills={};
+    this.entranceX=0;this.entranceY=0;
+    this.exitX=0;this.exitY=0;
+    this.entranceAnim=0;
+    this.hoverLem=null;
+    this.unlockedLevels=1;
+    this.miniImageData=null;
+    this.nuking=false;this.nukeIdx=0;
+    this.frameCount=0;
+    this.setupUI();
+    this.setupInput();
+    this.showTitle();
+    this.loop();
+  }
+
+  setupUI(){
+    const bar=document.getElementById('ability-bar');
+    bar.innerHTML='';
+    ABILITIES.forEach((name,i)=>{
+      const btn=document.createElement('button');
+      btn.className='ability-btn';
+      btn.dataset.idx=i;
+      btn.innerHTML=`<span class="ab-icon">${AB_ICONS[i]}</span><span class="ab-name">${name}</span><span class="ab-count" id="ac-${i}">0</span>`;
+      btn.onclick=()=>{
+        sfx.init();sfx.resume();
+        if(this.gameState!=='playing')return;
+        if(!this.skills[i])return;
+        document.querySelectorAll('.ability-btn').forEach(b=>b.classList.remove('selected'));
+        if(this.selectedAbility===i){this.selectedAbility=-1;}
+        else{this.selectedAbility=i;btn.classList.add('selected');}
+      };
+      bar.appendChild(btn);
+    });
+    document.getElementById('btn-pause').onclick=()=>{
+      sfx.init();sfx.resume();
+      if(this.gameState!=='playing')return;
+      this.paused=!this.paused;
+      document.getElementById('btn-pause').classList.toggle('active',this.paused);
+    };
+    document.getElementById('btn-fast').onclick=()=>{
+      sfx.init();sfx.resume();
+      if(this.gameState!=='playing')return;
+      this.fastMode=!this.fastMode;
+      document.getElementById('btn-fast').classList.toggle('active',this.fastMode);
+    };
+    document.getElementById('btn-nuke').onclick=()=>{
+      sfx.init();sfx.resume();
+      if(this.gameState!=='playing'||this.nuking)return;
+      this.nuking=true;this.nukeIdx=0;
+    };
+    document.getElementById('btn-rate-down').onclick=()=>{
+      if(this.releaseRate>10)this.releaseRate-=5;
+      document.getElementById('rate-val').textContent=this.releaseRate;
+    };
+    document.getElementById('btn-rate-up').onclick=()=>{
+      this.releaseRate=Math.min(99,this.releaseRate+5);
+      document.getElementById('rate-val').textContent=this.releaseRate;
+    };
+  }
+
+  setupInput(){
+    const c=this.canvas;
+    c.addEventListener('mousemove',e=>{
+      const r=c.getBoundingClientRect();
+      this.mouseX=(e.clientX-r.left)*(VW/r.width);
+      this.mouseY=(e.clientY-r.top)*(VH/r.height);
+    });
+    c.addEventListener('click',e=>{
+      sfx.init();sfx.resume();
+      if(this.gameState!=='playing')return;
+      const r=c.getBoundingClientRect();
+      const cx=(e.clientX-r.left)*(VW/r.width)+this.scrollX;
+      const cy=(e.clientY-r.top)*(VH/r.height);
+      this.handleClick(cx,cy);
+    });
+    this.miniCanvas.addEventListener('click',e=>{
+      const r=this.miniCanvas.getBoundingClientRect();
+      const mx=(e.clientX-r.left)*(W/r.width);
+      this.scrollX=Math.max(0,Math.min(W-VW,mx-VW/2));
+    });
+  }
+
+  handleClick(cx,cy){
+    if(this.selectedAbility<0)return;
+    let best=null,bestD=Infinity;
+    for(const l of this.lemmings){
+      if(!l.active||l.dead||l.saved)continue;
+      const dx=l.x-cx,dy=(l.y-6)-cy;
+      const d=dx*dx+dy*dy;
+      if(d<bestD&&d<200){best=l;bestD=d;}
+    }
+    if(best)this.assignAbility(best,this.selectedAbility);
+  }
+
+  assignAbility(lem,ab){
+    if(!this.skills[ab]||this.skills[ab]<=0)return;
+    const st=lem.state;
+    switch(ab){
+      case 0:if(lem.isClimber)return;lem.isClimber=true;break;
+      case 1:if(lem.isFloater)return;lem.isFloater=true;if(st===S.FALL)lem.state=S.FLOAT;break;
+      case 2:if(lem.bomberTimer>0)return;lem.bomberTimer=300;lem.bomberSec=5;break;
+      case 3:if(st!==S.WALK)return;lem.state=S.BLOCK;break;
+      case 4:if(st!==S.WALK)return;lem.state=S.BUILD;lem.buildCount=0;lem.buildFrame=0;break;
+      case 5:if(st!==S.WALK)return;lem.state=S.BASH;lem.bashFrame=0;break;
+      case 6:if(st!==S.WALK)return;lem.state=S.DIG;lem.digFrame=0;break;
+      case 7:if(st!==S.WALK)return;lem.state=S.MINE;lem.mineFrame=0;break;
+      default:return;
+    }
+    this.skills[ab]--;
+    this.updateSkillUI();
+    sfx.play('assign');
+  }
+
+  updateSkillUI(){
+    ABILITIES.forEach((_,i)=>{
+      const el=document.getElementById('ac-'+i);
+      const ct=this.skills[i]||0;
+      el.textContent=ct;
+      el.parentElement.classList.toggle('disabled',ct<=0);
+    });
+  }
+
+  isSolid(x,y){
+    if(x<0||x>=W||y<0||y>=H)return false;
+    return this.terrainData[y*W+x]>0;
+  }
+  isSteel(x,y){
+    if(x<0||x>=W||y<0||y>=H)return false;
+    return this.terrainData[y*W+x]===2;
+  }
+  removeTerrain(x,y){
+    if(x<0||x>=W||y<0||y>=H)return;
+    const idx=y*W+x;
+    if(this.terrainData[idx]!==1)return;
+    this.terrainData[idx]=0;
+    this.tCtx.clearRect(x,y,1,1);
+  }
+  addTerrain(x,y,r,g,b){
+    if(x<0||x>=W||y<0||y>=H)return;
+    this.terrainData[y*W+x]=1;
+    this.tCtx.fillStyle=`rgb(${r},${g},${b})`;
+    this.tCtx.fillRect(x,y,1,1);
+  }
+
+  spawnParticles(x,y,color,count){
+    for(let i=0;i<count;i++){
+      this.particles.push(new Particle(x+(Math.random()*6-3),y+(Math.random()*6-3),color,
+        (Math.random()-.5)*4,(Math.random()-.5)*4-1,20+Math.random()*20));
+    }
+  }
+
+  // ========== LEVEL LOADING ==========
+  loadLevel(idx){
+    this.currentLevel=idx;
+    const lv=LEVELS[idx];
+    this.terrainData.fill(0);
+    // Generate terrain into ImageData
+    const imgData=new ImageData(W,H);
+    lv.generate(imgData.data,this.terrainData);
+    this.tCtx.putImageData(imgData,0,0);
+    this.lemmings=[];
+    this.particles=[];
+    this.entranceX=lv.entrance.x;this.entranceY=lv.entrance.y;
+    this.exitX=lv.exit.x;this.exitY=lv.exit.y;
+    this.skills={};
+    for(const k in lv.skills)this.skills[parseInt(k)]=lv.skills[k];
+    this.releaseRate=lv.rate;
+    document.getElementById('rate-val').textContent=this.releaseRate;
+    this.releaseTimer=0;
+    this.lemmingsOut=0;this.lemmingsSaved=0;
+    this.levelTime=lv.time*60;this.maxTime=lv.time*60;
+    this.scrollX=Math.max(0,Math.min(W-VW,this.entranceX-VW/2));
+    this.selectedAbility=-1;
+    this.paused=false;this.fastMode=false;
+    this.nuking=false;this.nukeIdx=0;
+    this.entranceAnim=0;this.frameCount=0;
+    this.gameState='playing';
+    this.updateSkillUI();
+    this.updateHeader();
+    document.querySelectorAll('.ability-btn').forEach(b=>b.classList.remove('selected'));
+    document.getElementById('btn-pause').classList.remove('active');
+    document.getElementById('btn-fast').classList.remove('active');
+    document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('level-name').textContent=lv.name;
+  }
+
+  updateHeader(){
+    const lv=LEVELS[this.currentLevel];
+    document.getElementById('s-out').textContent=this.lemmingsOut;
+    document.getElementById('s-in').textContent=lv.total-this.lemmingsOut;
+    document.getElementById('s-need').textContent=lv.need;
+    document.getElementById('s-saved').textContent=this.lemmingsSaved;
+  }
+  countDead(){let c=0;for(const l of this.lemmings)if(l.dead)c++;return c}
+  countActive(){let c=0;for(const l of this.lemmings)if(l.active&&!l.dead&&!l.saved)c++;return c}
+
+  // ========== GAME UPDATE ==========
+  update(){
+    if(this.gameState!=='playing'||this.paused)return;
+    const lv=LEVELS[this.currentLevel];
+    this.frameCount++;
+    this.levelTime--;
+    if(this.levelTime<=0){this.endLevel();return;}
+
+    // Release lemmings
+    this.releaseTimer++;
+    const interval=Math.max(10,110-this.releaseRate);
+    if(this.releaseTimer>=interval&&this.lemmingsOut<lv.total){
+      this.lemmings.push(new Lem(this.entranceX,this.entranceY));
+      this.lemmingsOut++;
+      this.releaseTimer=0;
+      sfx.play('pop');
+    }
+
+    // Nuke
+    if(this.nuking){
+      let found=false;
+      for(let i=this.nukeIdx;i<this.lemmings.length;i++){
+        const l=this.lemmings[i];
+        if(l.active&&!l.dead&&!l.saved&&l.bomberTimer===0){
+          l.bomberTimer=300;l.bomberSec=5;
+          this.nukeIdx=i+1;found=true;break;
+        }
+      }
+      if(!found)this.nuking=false;
+    }
+
+    // Update lemmings
+    for(const l of this.lemmings){
+      if(!l.active||l.dead||l.saved)continue;
+      if(l.bomberTimer>0&&l.state!==S.SPLAT){
+        l.bomberTimer--;
+        const ns=Math.ceil(l.bomberTimer/60);
+        if(ns<l.bomberSec){l.bomberSec=ns;sfx.play('tick');}
+        if(l.bomberTimer<=0){this.explodeLemming(l);continue;}
+      }
+      this.updateLemming(l);
+      // Check exit (only walking lemmings can enter)
+      if(!l.dead&&!l.saved&&l.active&&l.state===S.WALK){
+        if(Math.abs(l.x-this.exitX)<12&&Math.abs(l.y-this.exitY)<14){
+          l.saved=true;l.active=false;l.state=S.EXIT;l.exitFrame=0;
+          this.lemmingsSaved++;sfx.play('saved');
+        }
+      }
+      if(l.x<-20||l.x>W+20||l.y>H+20){l.dead=true;l.active=false;}
+    }
+
+    // Update exit animations
+    for(const l of this.lemmings)if(l.saved&&l.state===S.EXIT)l.exitFrame++;
+
+    this.particles=this.particles.filter(p=>p.update());
+
+    if(this.lemmingsOut>=lv.total&&this.countActive()===0){this.endLevel();}
+    this.updateHeader();
+    this.entranceAnim=(this.entranceAnim+.05)%(Math.PI*2);
+  }
+
+  explodeLemming(l){
+    const cx=Math.round(l.x),cy=Math.round(l.y)-6;
+    const R=18;
+    for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++)
+      if(dx*dx+dy*dy<=R*R)this.removeTerrain(cx+dx,cy+dy);
+    l.dead=true;l.active=false;
+    for(let i=0;i<30;i++){
+      const a=Math.random()*Math.PI*2,sp=1+Math.random()*4;
+      this.particles.push(new Particle(cx,cy,
+        ['#ff4400','#ffaa00','#ffff00','#ff6600'][i&3],
+        Math.cos(a)*sp,Math.sin(a)*sp-2,30+Math.random()*30));
+    }
+    sfx.play('explode');
+  }
+
+  updateLemming(l){
+    l.frame++;
+    switch(l.state){
+      case S.WALK:this.doWalk(l);break;
+      case S.FALL:this.doFall(l);break;
+      case S.CLIMB:this.doClimb(l);break;
+      case S.FLOAT:this.doFloat(l);break;
+      case S.BUILD:this.doBuild(l);break;
+      case S.BASH:this.doBash(l);break;
+      case S.DIG:this.doDig(l);break;
+      case S.MINE:this.doMine(l);break;
+      case S.BLOCK:this.doBlock(l);break;
+      case S.SPLAT:this.doSplat(l);break;
+    }
+  }
+
+  checkBlockers(l,nx){
+    for(const o of this.lemmings){
+      if(o===l||!o.active||o.dead||o.saved||o.state!==S.BLOCK)continue;
+      if(Math.abs(nx-o.x)<6&&Math.abs(l.y-o.y)<10){l.dir*=-1;return true;}
+    }
+    return false;
+  }
+
+  doWalk(l){
+    const nx=l.x+l.dir;
+    if(this.checkBlockers(l,nx))return;
+    // Check ground
+    if(!this.isSolid(Math.round(l.x),Math.round(l.y)+1)){
+      l.state=S.FALL;l.fallDist=0;return;
+    }
+    const ix=Math.round(nx);
+    let foundY=-1;
+    for(let dy=-6;dy<=3;dy++){
+      const ty=Math.round(l.y)+dy;
+      if(ty<0||ty>=H-1)continue;
+      if(!this.isSolid(ix,ty)&&this.isSolid(ix,ty+1)){foundY=ty;break;}
+    }
+    if(foundY>=0){
+      if(Math.round(l.y)-foundY>6){
+        if(l.isClimber)l.state=S.CLIMB;else l.dir*=-1;
+      } else {l.x=nx;l.y=foundY;}
+    } else {
+      let solid=0;
+      for(let dy=0;dy>=-10;dy--)if(this.isSolid(ix,Math.round(l.y)+dy))solid++;
+      if(solid>4){if(l.isClimber)l.state=S.CLIMB;else l.dir*=-1;}
+      else{l.x=nx;if(!this.isSolid(Math.round(l.x),Math.round(l.y)+1)){l.state=S.FALL;l.fallDist=0;}}
+    }
+  }
+
+  doFall(l){
+    if(l.isFloater&&l.fallDist>16){l.state=S.FLOAT;return;}
+    for(let i=0;i<2;i++){
+      if(this.isSolid(Math.round(l.x),Math.round(l.y)+1)){
+        while(this.isSolid(Math.round(l.x),Math.round(l.y)))l.y--;
+        if(l.fallDist>MAX_FALL){l.state=S.SPLAT;l.splatFrame=0;sfx.play('splat');}
+        else l.state=S.WALK;
+        l.fallDist=0;return;
+      }
+      l.y++;l.fallDist++;
+      if(l.y>H+10){l.dead=true;l.active=false;return;}
+    }
+  }
+
+  doFloat(l){
+    if(l.frame%3===0){
+      if(this.isSolid(Math.round(l.x),Math.round(l.y)+1)){
+        while(this.isSolid(Math.round(l.x),Math.round(l.y)))l.y--;
+        l.state=S.WALK;l.fallDist=0;return;
+      }
+      l.y++;
+      if(l.y>H+10){l.dead=true;l.active=false;}
+    }
+  }
+
+  doClimb(l){
+    l.frame++;
+    const ix=Math.round(l.x);
+    l.y-=.5;
+    const iy=Math.round(l.y);
+    if(this.isSolid(ix,iy-8)){l.state=S.FALL;l.fallDist=0;l.dir*=-1;return;}
+    const wallX=ix+l.dir;
+    if(!this.isSolid(wallX,iy)&&!this.isSolid(wallX,iy-1)){
+      l.x=wallX;
+      let gy=iy;
+      while(gy<H&&!this.isSolid(Math.round(l.x),gy+1))gy++;
+      if(gy-iy>3){l.y=iy;l.state=S.FALL;l.fallDist=0;}
+      else{l.y=gy;l.state=S.WALK;}
+    }
+  }
+
+  doBuild(l){
+    l.buildFrame++;
+    if(l.buildCount>=12){l.state=S.WALK;return;}
+    if(l.buildFrame%12===0){
+      const bx=Math.round(l.x),by=Math.round(l.y);
+      let hitCeil=false;
+      for(let dx=0;dx<6;dx++){
+        const px=bx+l.dir*dx,py=by;
+        if(this.isSolid(px,py-8)){hitCeil=true;break;}
+        this.addTerrain(px,py,170,136,85);
+        this.addTerrain(px,py+1,150,116,65);
+      }
+      l.buildCount++;sfx.play('build');
+      l.x+=l.dir*4;l.y-=1;
+      if(hitCeil||this.isSolid(Math.round(l.x)+l.dir*2,Math.round(l.y)-4))l.state=S.WALK;
+    }
+  }
+
+  doBash(l){
+    l.bashFrame++;
+    if(l.bashFrame%4===0){
+      const ix=Math.round(l.x),iy=Math.round(l.y);
+      let rm=0,steel=false;
+      for(let dy=-10;dy<=0;dy++)for(let dx=1;dx<=3;dx++){
+        const px=ix+l.dir*dx,py=iy+dy;
+        if(this.isSteel(px,py))steel=true;
+        else if(this.isSolid(px,py)){this.removeTerrain(px,py);rm++;}
+      }
+      if(steel||rm===0){l.state=S.WALK;return;}
+      l.x+=l.dir;
+      if(rm>0&&Math.random()<.3)sfx.play('dig');
+      if(rm>0)this.spawnParticles(ix+l.dir*3,iy-5,'#8a7560',3);
+      if(!this.isSolid(Math.round(l.x),Math.round(l.y)+1)){l.state=S.FALL;l.fallDist=0;}
+    }
+  }
+
+  doDig(l){
+    l.digFrame++;
+    if(l.digFrame%4===0){
+      const ix=Math.round(l.x),iy=Math.round(l.y);
+      let rm=0,steel=false;
+      for(let dx=-4;dx<=4;dx++)for(let dy=1;dy<=2;dy++){
+        const px=ix+dx,py=iy+dy;
+        if(this.isSteel(px,py))steel=true;
+        else if(this.isSolid(px,py)){this.removeTerrain(px,py);rm++;}
+      }
+      if(steel){l.state=S.WALK;return;}
+      if(rm>0){l.y+=2;if(Math.random()<.3)sfx.play('dig');this.spawnParticles(ix,iy+2,'#6a5a3a',2);}
+      else{l.state=S.FALL;l.fallDist=0;}
+    }
+  }
+
+  doMine(l){
+    l.mineFrame++;
+    if(l.mineFrame%4===0){
+      const ix=Math.round(l.x),iy=Math.round(l.y);
+      let rm=0,steel=false;
+      for(let dx=0;dx<4;dx++)for(let dy=0;dy<4;dy++){
+        const px=ix+l.dir*dx,py=iy+dy;
+        if(this.isSteel(px,py))steel=true;
+        else if(this.isSolid(px,py)){this.removeTerrain(px,py);rm++;}
+      }
+      for(let dx=0;dx<3;dx++)for(let dy=-4;dy<0;dy++){
+        const px=ix+l.dir*dx,py=iy+dy;
+        if(!this.isSteel(px,py)&&this.isSolid(px,py)){this.removeTerrain(px,py);rm++;}
+      }
+      if(steel){l.state=S.WALK;return;}
+      if(rm>0){l.x+=l.dir*2;l.y+=2;if(Math.random()<.3)sfx.play('dig');this.spawnParticles(ix+l.dir*2,iy+2,'#5a5a6a',2);}
+      else{l.state=S.FALL;l.fallDist=0;}
+    }
+  }
+
+  doBlock(l){
+    if(!this.isSolid(Math.round(l.x),Math.round(l.y)+1)){l.state=S.FALL;l.fallDist=0;}
+  }
+
+  doSplat(l){
+    l.splatFrame++;
+    if(l.splatFrame>20){l.dead=true;l.active=false;}
+  }
+
+  endLevel(){
+    const lv=LEVELS[this.currentLevel];
+    const won=this.lemmingsSaved>=lv.need;
+    if(won&&this.currentLevel+1>=this.unlockedLevels&&this.currentLevel+1<LEVELS.length)
+      this.unlockedLevels=this.currentLevel+2;
+    this.gameState='results';
+    sfx.play(won?'win':'lose');
+    this.showResults(won);
+  }
+
+  handleScroll(){
+    if(this.gameState!=='playing')return;
+    const edge=60,spd=4;
+    if(this.mouseX<edge)this.scrollX=Math.max(0,this.scrollX-spd);
+    else if(this.mouseX>VW-edge)this.scrollX=Math.min(W-VW,this.scrollX+spd);
+  }
+
+  // ========== RENDERING ==========
+  render(){
+    const ctx=this.ctx;
+    if(this.gameState!=='playing'){
+      ctx.drawImage(this.skyCanvas,0,0);
+      return;
+    }
+    // Sky (cached)
+    ctx.drawImage(this.skyCanvas,0,0);
+    // Terrain
+    ctx.drawImage(this.terrainCanvas,Math.floor(this.scrollX),0,VW,VH,0,0,VW,VH);
+    // Entrance
+    this.drawEntrance(ctx);
+    // Exit
+    this.drawExit(ctx);
+    // Lemmings
+    for(const l of this.lemmings){
+      if(l.dead&&l.state!==S.SPLAT)continue;
+      if(l.saved&&l.exitFrame>15)continue;
+      this.drawLemming(ctx,l);
+    }
+    // Hover highlight
+    this.findHoverLem();
+    if(this.hoverLem&&this.selectedAbility>=0){
+      const hx=Math.round(this.hoverLem.x-this.scrollX),hy=Math.round(this.hoverLem.y)-6;
+      ctx.strokeStyle='rgba(127,239,171,0.7)';ctx.lineWidth=1;
+      ctx.strokeRect(hx-6,hy-8,12,16);
+    }
+    // Particles
+    for(const p of this.particles)p.draw(ctx,this.scrollX);
+    // Minimap
+    this.drawMinimap();
+  }
+
+  drawEntrance(ctx){
+    const x=Math.round(this.entranceX-this.scrollX),y=Math.round(this.entranceY);
+    ctx.fillStyle='#554433';ctx.fillRect(x-12,y-16,24,4);
+    ctx.fillStyle='#443322';ctx.fillRect(x-10,y-12,20,12);
+    ctx.fillStyle='#887766';ctx.fillRect(x-12,y-16,2,4);ctx.fillRect(x+10,y-16,2,4);
+    const a=Math.sin(this.entranceAnim)*.3+.5;
+    ctx.fillStyle='#665544';
+    ctx.fillRect(x-8,y-12,8,Math.round(a*10));ctx.fillRect(x,y-12,8,Math.round(a*10));
+  }
+
+  drawExit(ctx){
+    const x=Math.round(this.exitX-this.scrollX),y=Math.round(this.exitY);
+    ctx.fillStyle='#5577dd';ctx.fillRect(x-8,y-18,16,18);
+    ctx.fillStyle='#3355aa';ctx.fillRect(x-6,y-16,12,16);
+    ctx.fillStyle='#6688ee';ctx.fillRect(x-8,y-18,16,3);
+    ctx.fillStyle='#aaccff';
+    const bob=Math.sin(this.frameCount*.05)*2;
+    ctx.fillRect(x-2,y-12+bob,4,6);ctx.fillRect(x-4,y-8+bob,8,2);
+  }
+
+  drawLemming(ctx,l){
+    const x=Math.round(l.x-this.scrollX),y=Math.round(l.y),d=l.dir,f=l.frame;
+    if(l.state===S.SPLAT){
+      const sp=Math.min(l.splatFrame,10);
+      ctx.fillStyle='#4de94d';ctx.fillRect(x-sp,y-1,sp*2,2);
+      ctx.fillStyle='#4466ff';ctx.fillRect(x-sp+2,y-2,sp*2-4,1);
+      return;
+    }
+    if(l.state===S.EXIT){if(l.exitFrame>15)return;ctx.globalAlpha=1-l.exitFrame/15;}
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(x-3,y+1,7,2);
+    // Hair
+    ctx.fillStyle='#4de94d';ctx.fillRect(x-3,y-12,7,3);
+    // Skin
+    ctx.fillStyle='#ffcc88';ctx.fillRect(x-2,y-9,5,2);
+    ctx.fillStyle='#222';ctx.fillRect(x+(d>0?1:-1),y-9,1,1);
+    // Body
+    ctx.fillStyle='#4466ff';
+    if(l.state===S.CLIMB){
+      ctx.fillRect(x-3,y-7,7,5);ctx.fillStyle='#3355dd';
+      ctx.fillRect(x-4,y-10,2,4);ctx.fillRect(x+3,y-10,2,4);
+      const lp=Math.floor(f/6)%2;
+      ctx.fillRect(x-2,y-2,2,2+lp);ctx.fillRect(x+1,y-2,2,2+(1-lp));
+    } else if(l.state===S.BUILD){
+      ctx.fillRect(x-3,y-7,7,5);
+      ctx.fillStyle='#aa8855';ctx.fillRect(d>0?x+4:x-7,y-7,3,2);
+      ctx.fillStyle='#3355dd';ctx.fillRect(x-2,y-2,2,2);ctx.fillRect(x+1,y-2,2,2);
+    } else if(l.state===S.BASH){
+      ctx.fillRect(x-3,y-7,7,5);
+      const ext=Math.floor(f/4)%2;
+      ctx.fillStyle='#ffcc88';ctx.fillRect(x+d*(3+ext*3),y-7,3,2);
+      ctx.fillStyle='#3355dd';ctx.fillRect(x-2,y-2,2,2);ctx.fillRect(x+1,y-2,2,2);
+    } else if(l.state===S.DIG){
+      ctx.fillRect(x-3,y-7,7,5);ctx.fillStyle='#ffcc88';
+      const dg=Math.floor(f/4)%2;
+      ctx.fillRect(x-4,y-4+dg,2,3);ctx.fillRect(x+3,y-4+dg,2,3);
+      ctx.fillStyle='#3355dd';ctx.fillRect(x-2,y-2,5,2);
+    } else if(l.state===S.MINE){
+      ctx.fillRect(x-3,y-7,7,5);ctx.fillStyle='#ffcc88';ctx.fillRect(x+d*4,y-5,2,3);
+      ctx.fillStyle='#3355dd';ctx.fillRect(x-2,y-2,2,2);ctx.fillRect(x+1,y-2,2,2);
+    } else if(l.state===S.BLOCK){
+      ctx.fillRect(x-3,y-7,7,5);ctx.fillStyle='#ffcc88';
+      ctx.fillRect(x-6,y-7,3,2);ctx.fillRect(x+4,y-7,3,2);
+      ctx.fillStyle='#3355dd';ctx.fillRect(x-2,y-2,5,2);
+    } else if(l.state===S.FLOAT){
+      ctx.fillRect(x-3,y-7,7,5);
+      ctx.fillStyle='#ff4488';ctx.fillRect(x-5,y-18,11,3);ctx.fillRect(x-3,y-15,7,1);
+      ctx.fillStyle='#cc3366';ctx.fillRect(x,y-14,1,3);
+      ctx.fillStyle='#3355dd';
+      const sw=Math.sin(f*.15);
+      ctx.fillRect(x-2+sw,y-2,2,3);ctx.fillRect(x+1-sw,y-2,2,3);
+    } else {
+      ctx.fillRect(x-3,y-7,7,5);ctx.fillStyle='#3355dd';
+      if(l.state===S.FALL){
+        const sw=Math.sin(f*.3)*2;
+        ctx.fillRect(x-2+sw,y-2,2,3);ctx.fillRect(x+1-sw,y-2,2,3);
+      } else {
+        const step=Math.sin(f*.4)*2;
+        ctx.fillRect(x-2+step,y-2,2,2);ctx.fillRect(x+1-step,y-2,2,2);
+      }
+    }
+    if(l.isClimber&&l.state!==S.CLIMB){ctx.fillStyle='#ffaa00';ctx.fillRect(x+4,y-12,2,2);}
+    if(l.isFloater&&l.state!==S.FLOAT){ctx.fillStyle='#ff4488';ctx.fillRect(x-5,y-12,2,2);}
+    if(l.bomberTimer>0){
+      ctx.fillStyle='#ff2200';ctx.font='7px "Press Start 2P"';ctx.textAlign='center';
+      ctx.fillText(l.bomberSec.toString(),x,y-15);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  findHoverLem(){
+    const mx=this.mouseX+this.scrollX,my=this.mouseY;
+    let best=null,bestD=Infinity;
+    for(const l of this.lemmings){
+      if(!l.active||l.dead||l.saved)continue;
+      const dx=l.x-mx,dy=(l.y-6)-my,d=dx*dx+dy*dy;
+      if(d<bestD&&d<200){best=l;bestD=d;}
+    }
+    this.hoverLem=best;
+  }
+
+  drawMinimap(){
+    const mc=this.miniCtx;
+    // Use pre-allocated ImageData for terrain (fast)
+    if(!this.miniImageData)this.miniImageData=mc.createImageData(200,50);
+    const id=this.miniImageData;
+    const d=id.data;
+    const sx=W/200,sy=H/50;
+    for(let my=0;my<50;my++){
+      const wy=Math.floor(my*sy)*W;
+      for(let mx=0;mx<200;mx++){
+        const i=(my*200+mx)*4;
+        const t=this.terrainData[wy+Math.floor(mx*sx)];
+        if(t===2){d[i]=102;d[i+1]=119;d[i+2]=136;d[i+3]=255;}
+        else if(t===1){d[i]=74;d[i+1]=106;d[i+2]=58;d[i+3]=255;}
+        else{d[i]=10;d[i+1]=8;d[i+2]=22;d[i+3]=255;}
+      }
+    }
+    mc.putImageData(id,0,0);
+    // Lemmings
+    mc.fillStyle='#7fefab';
+    const isx=1/sx,isy=1/sy;
+    for(const l of this.lemmings){
+      if(!l.active||l.dead||l.saved)continue;
+      mc.fillRect(Math.round(l.x*isx),Math.round(l.y*isy),2,2);
+    }
+    // Viewport
+    mc.strokeStyle='#f0e060';mc.lineWidth=1;
+    mc.strokeRect(this.scrollX*isx,.5,VW*isx-1,49);
+    // Markers
+    mc.fillStyle='#ff4400';mc.fillRect(this.entranceX*isx-2,this.entranceY*isy-2,4,4);
+    mc.fillStyle='#4488ff';mc.fillRect(this.exitX*isx-2,this.exitY*isy-2,4,4);
+  }
+
+  // ========== OVERLAYS ==========
+  showTitle(){
+    this.gameState='title';
+    document.getElementById('overlay-content').innerHTML=`
+      <h1>LEMMINGS</h1>
+      <p style="color:#7fefab;font-size:10px;margin:12px 0">A browser tribute</p>
+      <p>Guide the lemmings to safety!</p>
+      <p>Click a lemming after selecting an ability</p>
+      <p style="margin-top:8px">Scroll: move mouse to screen edges</p>
+      <br>
+      <button class="overlay-btn" onclick="game.showLevelSelect()">PLAY</button>
+    `;
+    document.getElementById('overlay').classList.remove('hidden');
+  }
+
+  showLevelSelect(){
+    sfx.init();sfx.resume();
+    this.gameState='levelSelect';
+    let html='<h2>SELECT LEVEL</h2><div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:16px 0">';
+    LEVELS.forEach((lv,i)=>{
+      html+=`<button class="level-btn ${i>=this.unlockedLevels?'locked':''}" onclick="game.loadLevel(${i})">${i+1}. ${lv.name}</button>`;
+    });
+    html+='</div><button class="overlay-btn secondary" onclick="game.showTitle()">BACK</button>';
+    document.getElementById('overlay-content').innerHTML=html;
+    document.getElementById('overlay').classList.remove('hidden');
+  }
+
+  showResults(won){
+    const lv=LEVELS[this.currentLevel];
+    const pct=Math.round(this.lemmingsSaved/lv.total*100);
+    document.getElementById('overlay-content').innerHTML=`
+      <h2>${won?'LEVEL COMPLETE!':'LEVEL FAILED'}</h2>
+      <div class="big-stat">${this.lemmingsSaved} / ${lv.total} saved (${pct}%)</div>
+      <p>Needed: ${lv.need}</p><br>
+      <div>
+        <button class="overlay-btn secondary" onclick="game.loadLevel(${this.currentLevel})">RETRY</button>
+        ${won&&this.currentLevel<LEVELS.length-1?`<button class="overlay-btn" onclick="game.loadLevel(${this.currentLevel+1})">NEXT LEVEL</button>`:''}
+        <button class="overlay-btn secondary" onclick="game.showLevelSelect()">LEVELS</button>
+      </div>`;
+    document.getElementById('overlay').classList.remove('hidden');
+  }
+
+  // ========== MAIN LOOP ==========
+  loop(ts){
+    if(!this._lastTs)this._lastTs=ts;
+    const dt=ts-this._lastTs;
+    if(dt>=16){// Cap at ~60fps for consistent game speed
+      this._lastTs=ts-(dt%16);
+      const ticks=this.fastMode?3:1;
+      for(let i=0;i<ticks;i++)this.update();
+      this.handleScroll();
+    }
+    this.render();
+    requestAnimationFrame((t)=>this.loop(t));
+  }
+}
+
+const game=new Game();
+</script>
+</body>
+</html>
