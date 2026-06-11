@@ -54,6 +54,7 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
     <span id="level-name">LEMMINGS</span>
     <span>NEED:<span class="stat-val" id="s-need">0</span></span>
     <span>SAVED:<span class="stat-val" id="s-saved">0</span></span>
+    <span>TIME:<span class="stat-val" id="s-time">0:00</span></span>
   </div>
   <div id="canvas-wrap">
     <canvas id="gameCanvas" width="800" height="400"></canvas>
@@ -70,9 +71,10 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
     <div class="tool-section abilities" id="ability-bar"></div>
     <div class="tool-divider"></div>
     <div class="tool-section">
-      <button class="ctrl-btn" id="btn-pause" title="Pause">&#9646;&#9646;</button>
-      <button class="ctrl-btn" id="btn-fast" title="Fast forward">&#9654;&#9654;</button>
-      <button class="ctrl-btn" id="btn-nuke" title="Nuke!">&#9762;</button>
+      <button class="ctrl-btn" id="btn-pause" title="Pause (P)">&#9646;&#9646;</button>
+      <button class="ctrl-btn" id="btn-fast" title="Fast forward (F)">&#9654;&#9654;</button>
+      <button class="ctrl-btn" id="btn-nuke" title="Nuke! (N)">&#9762;</button>
+      <button class="ctrl-btn" id="btn-mute" title="Mute (M)">&#9834;</button>
     </div>
   </div>
   <div id="overlay">
@@ -84,6 +86,10 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
 // ===================== CONSTANTS =====================
 const W=1600, H=400, VW=800, VH=400;
 const MAX_FALL=62;
+// Walker footing scan offsets, nearest-first: a surface at the current height
+// must win over a ledge overhead, else lemmings pop up through bridges/covers.
+const STEP_SCAN=[0,1,-1,2,-2,3,-3,-4,-5,-6];
+const SAVE_KEY='lemmings.unlocked';
 const ABILITIES=['Climber','Floater','Bomber','Blocker','Builder','Basher','Digger','Miner'];
 const AB_ICONS=['\u2191','\u2602','\u2622','\u2716','\u2692','\u2694','\u26CF','\u26A0'];
 const S={WALK:0,FALL:1,CLIMB:2,FLOAT:3,BUILD:4,BASH:5,DIG:6,MINE:7,BLOCK:8,SPLAT:9,EXIT:10,DEAD:11};
@@ -93,6 +99,7 @@ class SFX {
   constructor(){this.ctx=null;this.on=true}
   init(){if(!this.ctx)this.ctx=new(window.AudioContext||window.webkitAudioContext)()}
   resume(){if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume()}
+  unlock(){this.init();this.resume()}
   play(type){
     if(!this.on||!this.ctx)return;
     const c=this.ctx,t=c.currentTime,g=c.createGain();
@@ -418,20 +425,24 @@ class Game {
     this.releaseRate=50;
     this.releaseTimer=0;
     this.lemmingsOut=0;this.lemmingsSaved=0;
-    this.levelTime=0;this.maxTime=0;
+    this.levelTime=0;this.lastSecsShown=-1;
     this.skills={};
     this.entranceX=0;this.entranceY=0;
     this.exitX=0;this.exitY=0;
     this.entranceAnim=0;
     this.hoverLem=null;
     this.unlockedLevels=1;
+    try{
+      const u=parseInt(localStorage.getItem(SAVE_KEY),10);
+      if(u>=1&&u<=LEVELS.length)this.unlockedLevels=u;
+    }catch(e){}
     this.miniImageData=null;
     this.nuking=false;this.nukeIdx=0;
     this.frameCount=0;
     this.setupUI();
     this.setupInput();
     this.showTitle();
-    this.loop();
+    requestAnimationFrame(t=>this.loop(t));
   }
 
   setupUI(){
@@ -442,41 +453,53 @@ class Game {
       btn.className='ability-btn';
       btn.dataset.idx=i;
       btn.innerHTML=`<span class="ab-icon">${AB_ICONS[i]}</span><span class="ab-name">${name}</span><span class="ab-count" id="ac-${i}">0</span>`;
-      btn.onclick=()=>{
-        sfx.init();sfx.resume();
-        if(this.gameState!=='playing')return;
-        if(!this.skills[i])return;
-        document.querySelectorAll('.ability-btn').forEach(b=>b.classList.remove('selected'));
-        if(this.selectedAbility===i){this.selectedAbility=-1;}
-        else{this.selectedAbility=i;btn.classList.add('selected');}
-      };
+      // blur() keeps focus off toolbar buttons so Space/Enter only drive the game keys
+      btn.onclick=e=>{e.currentTarget.blur();sfx.unlock();this.selectAbility(i);};
       bar.appendChild(btn);
     });
-    document.getElementById('btn-pause').onclick=()=>{
-      sfx.init();sfx.resume();
-      if(this.gameState!=='playing')return;
-      this.paused=!this.paused;
-      document.getElementById('btn-pause').classList.toggle('active',this.paused);
-    };
-    document.getElementById('btn-fast').onclick=()=>{
-      sfx.init();sfx.resume();
-      if(this.gameState!=='playing')return;
-      this.fastMode=!this.fastMode;
-      document.getElementById('btn-fast').classList.toggle('active',this.fastMode);
-    };
-    document.getElementById('btn-nuke').onclick=()=>{
-      sfx.init();sfx.resume();
-      if(this.gameState!=='playing'||this.nuking)return;
-      this.nuking=true;this.nukeIdx=0;
-    };
-    document.getElementById('btn-rate-down').onclick=()=>{
-      if(this.releaseRate>10)this.releaseRate-=5;
-      document.getElementById('rate-val').textContent=this.releaseRate;
-    };
-    document.getElementById('btn-rate-up').onclick=()=>{
-      this.releaseRate=Math.min(99,this.releaseRate+5);
-      document.getElementById('rate-val').textContent=this.releaseRate;
-    };
+    const ctl=(id,fn)=>{document.getElementById(id).onclick=e=>{e.currentTarget.blur();sfx.unlock();fn();};};
+    ctl('btn-pause',()=>this.togglePause());
+    ctl('btn-fast',()=>this.toggleFast());
+    ctl('btn-nuke',()=>this.startNuke());
+    ctl('btn-mute',()=>this.toggleMute());
+    ctl('btn-rate-down',()=>this.adjustRate(-5));
+    ctl('btn-rate-up',()=>this.adjustRate(5));
+  }
+
+  selectAbility(i){
+    if(this.gameState!=='playing'||!this.skills[i])return;
+    const toggleOff=this.selectedAbility===i;
+    this.deselectAbility();
+    if(toggleOff)return;
+    this.selectedAbility=i;
+    const btn=document.querySelector(`.ability-btn[data-idx="${i}"]`);
+    if(btn)btn.classList.add('selected');
+  }
+  deselectAbility(){
+    this.selectedAbility=-1;
+    document.querySelectorAll('.ability-btn').forEach(b=>b.classList.remove('selected'));
+  }
+  togglePause(){
+    if(this.gameState!=='playing')return;
+    this.paused=!this.paused;
+    document.getElementById('btn-pause').classList.toggle('active',this.paused);
+  }
+  toggleFast(){
+    if(this.gameState!=='playing')return;
+    this.fastMode=!this.fastMode;
+    document.getElementById('btn-fast').classList.toggle('active',this.fastMode);
+  }
+  startNuke(){
+    if(this.gameState!=='playing'||this.nuking)return;
+    this.nuking=true;this.nukeIdx=0;
+  }
+  toggleMute(){
+    sfx.on=!sfx.on;
+    document.getElementById('btn-mute').classList.toggle('active',!sfx.on);
+  }
+  adjustRate(d){
+    this.releaseRate=Math.max(10,Math.min(99,this.releaseRate+d));
+    document.getElementById('rate-val').textContent=this.releaseRate;
   }
 
   setupInput(){
@@ -487,7 +510,7 @@ class Game {
       this.mouseY=(e.clientY-r.top)*(VH/r.height);
     });
     c.addEventListener('click',e=>{
-      sfx.init();sfx.resume();
+      sfx.unlock();
       if(this.gameState!=='playing')return;
       const r=c.getBoundingClientRect();
       const cx=(e.clientX-r.left)*(VW/r.width)+this.scrollX;
@@ -498,6 +521,24 @@ class Game {
       const r=this.miniCanvas.getBoundingClientRect();
       const mx=(e.clientX-r.left)*(W/r.width);
       this.scrollX=Math.max(0,Math.min(W-VW,mx-VW/2));
+    });
+    const cancelMenu=e=>{e.preventDefault();this.deselectAbility();};
+    c.addEventListener('contextmenu',cancelMenu);
+    this.miniCanvas.addEventListener('contextmenu',cancelMenu);
+    window.addEventListener('keydown',e=>{
+      if(e.repeat)return;
+      // Leave browser shortcuts alone (Cmd+P, Ctrl+F, ...); Ctrl+Alt together is AltGr
+      if(e.metaKey||(e.ctrlKey&&!e.altKey)||(e.altKey&&!e.ctrlKey))return;
+      const k=e.key;
+      if(k==='m'||k==='M'){sfx.unlock();this.toggleMute();return;}
+      if(this.gameState!=='playing')return;
+      if(k>='1'&&k<='8'){sfx.unlock();this.selectAbility(k.charCodeAt(0)-49);}
+      else if(k==='p'||k==='P'||k===' '){e.preventDefault();sfx.unlock();this.togglePause();}
+      else if(k==='f'||k==='F')this.toggleFast();
+      else if(k==='n'||k==='N')this.startNuke();
+      else if(k==='Escape')this.deselectAbility();
+      else if(k==='-'||k==='_')this.adjustRate(-5);
+      else if(k==='='||k==='+')this.adjustRate(5);
     });
   }
 
@@ -589,16 +630,15 @@ class Game {
     document.getElementById('rate-val').textContent=this.releaseRate;
     this.releaseTimer=0;
     this.lemmingsOut=0;this.lemmingsSaved=0;
-    this.levelTime=lv.time*60;this.maxTime=lv.time*60;
+    this.levelTime=lv.time*60;this.lastSecsShown=-1;
     this.scrollX=Math.max(0,Math.min(W-VW,this.entranceX-VW/2));
-    this.selectedAbility=-1;
     this.paused=false;this.fastMode=false;
     this.nuking=false;this.nukeIdx=0;
     this.entranceAnim=0;this.frameCount=0;
     this.gameState='playing';
+    this.deselectAbility();
     this.updateSkillUI();
     this.updateHeader();
-    document.querySelectorAll('.ability-btn').forEach(b=>b.classList.remove('selected'));
     document.getElementById('btn-pause').classList.remove('active');
     document.getElementById('btn-fast').classList.remove('active');
     document.getElementById('overlay').classList.add('hidden');
@@ -611,8 +651,14 @@ class Game {
     document.getElementById('s-in').textContent=lv.total-this.lemmingsOut;
     document.getElementById('s-need').textContent=lv.need;
     document.getElementById('s-saved').textContent=this.lemmingsSaved;
+    const secs=Math.max(0,Math.ceil(this.levelTime/60));
+    if(secs!==this.lastSecsShown){
+      this.lastSecsShown=secs;
+      const tEl=document.getElementById('s-time');
+      tEl.textContent=Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+      tEl.style.color=secs<=30?'#ff6644':'';
+    }
   }
-  countDead(){let c=0;for(const l of this.lemmings)if(l.dead)c++;return c}
   countActive(){let c=0;for(const l of this.lemmings)if(l.active&&!l.dead&&!l.saved)c++;return c}
 
   // ========== GAME UPDATE ==========
@@ -623,27 +669,25 @@ class Game {
     this.levelTime--;
     if(this.levelTime<=0){this.endLevel();return;}
 
-    // Release lemmings
+    // Release lemmings (the entrance closes once a nuke is called)
     this.releaseTimer++;
     const interval=Math.max(10,110-this.releaseRate);
-    if(this.releaseTimer>=interval&&this.lemmingsOut<lv.total){
+    if(this.releaseTimer>=interval&&this.lemmingsOut<lv.total&&!this.nuking){
       this.lemmings.push(new Lem(this.entranceX,this.entranceY));
       this.lemmingsOut++;
       this.releaseTimer=0;
       sfx.play('pop');
     }
 
-    // Nuke
+    // Nuke: arm one bomber per tick; stays latched so the entrance never reopens
     if(this.nuking){
-      let found=false;
       for(let i=this.nukeIdx;i<this.lemmings.length;i++){
         const l=this.lemmings[i];
         if(l.active&&!l.dead&&!l.saved&&l.bomberTimer===0){
           l.bomberTimer=300;l.bomberSec=5;
-          this.nukeIdx=i+1;found=true;break;
+          this.nukeIdx=i+1;break;
         }
       }
-      if(!found)this.nuking=false;
     }
 
     // Update lemmings
@@ -671,7 +715,7 @@ class Game {
 
     this.particles=this.particles.filter(p=>p.update());
 
-    if(this.lemmingsOut>=lv.total&&this.countActive()===0){this.endLevel();}
+    if((this.lemmingsOut>=lv.total||this.nuking)&&this.countActive()===0){this.endLevel();}
     this.updateHeader();
     this.entranceAnim=(this.entranceAnim+.05)%(Math.PI*2);
   }
@@ -724,15 +768,13 @@ class Game {
     }
     const ix=Math.round(nx);
     let foundY=-1;
-    for(let dy=-6;dy<=3;dy++){
+    for(const dy of STEP_SCAN){
       const ty=Math.round(l.y)+dy;
       if(ty<0||ty>=H-1)continue;
       if(!this.isSolid(ix,ty)&&this.isSolid(ix,ty+1)){foundY=ty;break;}
     }
     if(foundY>=0){
-      if(Math.round(l.y)-foundY>6){
-        if(l.isClimber)l.state=S.CLIMB;else l.dir*=-1;
-      } else {l.x=nx;l.y=foundY;}
+      l.x=nx;l.y=foundY;
     } else {
       let solid=0;
       for(let dy=0;dy>=-10;dy--)if(this.isSolid(ix,Math.round(l.y)+dy))solid++;
@@ -767,7 +809,6 @@ class Game {
   }
 
   doClimb(l){
-    l.frame++;
     const ix=Math.round(l.x);
     l.y-=.5;
     const iy=Math.round(l.y);
@@ -866,8 +907,10 @@ class Game {
   endLevel(){
     const lv=LEVELS[this.currentLevel];
     const won=this.lemmingsSaved>=lv.need;
-    if(won&&this.currentLevel+1>=this.unlockedLevels&&this.currentLevel+1<LEVELS.length)
+    if(won&&this.currentLevel+1>=this.unlockedLevels&&this.currentLevel+1<LEVELS.length){
       this.unlockedLevels=this.currentLevel+2;
+      try{localStorage.setItem(SAVE_KEY,this.unlockedLevels)}catch(e){}
+    }
     this.gameState='results';
     sfx.play(won?'win':'lose');
     this.showResults(won);
@@ -1057,6 +1100,8 @@ class Game {
       <p>Guide the lemmings to safety!</p>
       <p>Click a lemming after selecting an ability</p>
       <p style="margin-top:8px">Scroll: move mouse to screen edges</p>
+      <p>Keys: 1-8 abilities &middot; P pause &middot; F fast &middot; N nuke &middot; M mute</p>
+      <p>Right-click deselects the current ability</p>
       <br>
       <button class="overlay-btn" onclick="game.showLevelSelect()">PLAY</button>
     `;
@@ -1064,7 +1109,7 @@ class Game {
   }
 
   showLevelSelect(){
-    sfx.init();sfx.resume();
+    sfx.unlock();
     this.gameState='levelSelect';
     let html='<h2>SELECT LEVEL</h2><div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:16px 0">';
     LEVELS.forEach((lv,i)=>{
