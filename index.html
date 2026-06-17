@@ -86,6 +86,7 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
 // ===================== CONSTANTS =====================
 const W=1600, H=400, VW=800, VH=400;
 const MAX_FALL=62;
+const STEP_MS=1000/60;   // fixed simulation timestep (60 Hz)
 // Walker footing scan offsets, nearest-first: a surface at the current height
 // must win over a ledge overhead, else lemmings pop up through bridges/covers.
 const STEP_SCAN=[0,1,-1,2,-2,3,-3,-4,-5,-6];
@@ -439,6 +440,7 @@ class Game {
     this.miniImageData=null;
     this.nuking=false;this.nukeIdx=0;
     this.frameCount=0;
+    this._acc=0;   // fixed-timestep accumulator (ms of un-simulated real time)
     this.setupUI();
     this.setupInput();
     this.showTitle();
@@ -537,6 +539,7 @@ class Game {
       else if(k==='f'||k==='F')this.toggleFast();
       else if(k==='n'||k==='N')this.startNuke();
       else if(k==='Escape')this.deselectAbility();
+      else if(k==='r'||k==='R')this.loadLevel(this.currentLevel);
       else if(k==='-'||k==='_')this.adjustRate(-5);
       else if(k==='='||k==='+')this.adjustRate(5);
     });
@@ -546,7 +549,7 @@ class Game {
     if(this.selectedAbility<0)return;
     let best=null,bestD=Infinity;
     for(const l of this.lemmings){
-      if(!l.active||l.dead||l.saved)continue;
+      if(!l.active||l.dead||l.saved||l.state===S.SPLAT)continue;
       const dx=l.x-cx,dy=(l.y-6)-cy;
       const d=dx*dx+dy*dy;
       if(d<bestD&&d<200){best=l;bestD=d;}
@@ -569,6 +572,9 @@ class Game {
       default:return;
     }
     this.skills[ab]--;
+    // Drop the selection once a tool is exhausted, so the UI never shows an
+    // ability highlighted-but-unusable (clicks on a depleted skill are no-ops).
+    if(this.skills[ab]<=0&&this.selectedAbility===ab)this.deselectAbility();
     this.updateSkillUI();
     sfx.play('assign');
   }
@@ -1051,7 +1057,7 @@ class Game {
     const mx=this.mouseX+this.scrollX,my=this.mouseY;
     let best=null,bestD=Infinity;
     for(const l of this.lemmings){
-      if(!l.active||l.dead||l.saved)continue;
+      if(!l.active||l.dead||l.saved||l.state===S.SPLAT)continue;
       const dx=l.x-mx,dy=(l.y-6)-my,d=dx*dx+dy*dy;
       if(d<bestD&&d<200){best=l;bestD=d;}
     }
@@ -1136,17 +1142,31 @@ class Game {
   }
 
   // ========== MAIN LOOP ==========
-  loop(ts){
-    if(!this._lastTs)this._lastTs=ts;
-    const dt=ts-this._lastTs;
-    if(dt>=16){// Cap at ~60fps for consistent game speed
-      this._lastTs=ts-(dt%16);
-      const ticks=this.fastMode?3:1;
-      for(let i=0;i<ticks;i++)this.update();
-      this.handleScroll();
+  // Advance the simulation by `dt` real milliseconds using a fixed 60 Hz
+  // timestep, so game speed is independent of the display's refresh rate.
+  // (The old loop ran at most one tick per frame, which silently slowed the
+  // sim on sub-60fps displays and only ever ran 3x in fast mode.) A long gap
+  // — e.g. a backgrounded tab whose rAF callbacks were suppressed — is clamped
+  // so we never try to catch up thousands of ticks in one frame. Returns the
+  // number of update() ticks run, which keeps it unit-testable.
+  stepSim(dt){
+    if(dt>250)dt=250;
+    this._acc+=dt;
+    const mult=this.fastMode?3:1;
+    let ran=0;
+    while(this._acc>=STEP_MS){
+      this._acc-=STEP_MS;
+      for(let i=0;i<mult;i++){this.update();ran++;}
     }
+    return ran;
+  }
+  loop(ts){
+    if(this._lastTs===undefined)this._lastTs=ts;
+    this.stepSim(ts-this._lastTs);
+    this._lastTs=ts;
+    this.handleScroll();
     this.render();
-    requestAnimationFrame((t)=>this.loop(t));
+    requestAnimationFrame(t=>this.loop(t));
   }
 }
 

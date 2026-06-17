@@ -64,8 +64,12 @@ all were released or a nuke is in progress.
 
 ## Rendering
 
-`loop()` runs on `requestAnimationFrame` with a 16ms accumulator so game speed
-is monitor-independent. Per frame: cached sky canvas → terrain canvas slice →
+`loop()` runs on `requestAnimationFrame`; `stepSim(dt)` advances the simulation
+in fixed 60 Hz ticks (3× in fast mode) from the real time elapsed, so game speed
+is independent of the display's refresh rate — below 60fps it runs multiple
+ticks per frame to keep up, and it clamps long gaps (e.g. a backgrounded tab
+whose rAF callbacks were suppressed) so it never tries to catch up thousands of
+ticks at once. Per frame: cached sky canvas → terrain canvas slice →
 entrance/exit → procedurally drawn lemming sprites (`drawLemming`, a pile of
 `fillRect`s per state) → particles → minimap. The minimap redraws terrain into
 a pre-allocated `ImageData` each frame and overlays lemming dots, viewport box,
@@ -85,9 +89,10 @@ persist to `localStorage` under `lemmings.unlocked`.
 `index.html`, evaluates it in a `vm` sandbox with stub `document`/canvas/
 `localStorage`/`requestAnimationFrame`, and drives `game.update()` directly —
 rendering is stubbed to no-ops, simulation runs for real. Coverage includes a
-scripted solve of level 1 (asserting zero splats and all 10 saved), per-skill
-physics scenarios on hand-built terrain, steel invulnerability, nuke flow,
-timer display, and persistence. Add a test alongside any physics or rules
+scripted solve of level 1 (asserting zero splats and all 10 saved), a config
+sanity check across every level, per-skill physics scenarios on hand-built
+terrain, steel invulnerability, nuke flow, the fixed-timestep loop (`stepSim`),
+ability auto-deselect, timer display, and persistence. Add a test alongside any physics or rules
 change; hand-built terrain via the `fill()` helper keeps scenarios
 deterministic (level generators sprinkle random grass, so prefer blank
 terrain for precise assertions).

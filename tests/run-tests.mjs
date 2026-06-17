@@ -83,7 +83,7 @@ function makeSandbox(){
   sandbox.__els=els;
   sandbox.__store=store;
   vm.createContext(sandbox);
-  vm.runInContext(m[1]+'\n;globalThis.__T={game,Game,Lem,LEVELS,S,sfx,W,H,MAX_FALL};',sandbox);
+  vm.runInContext(m[1]+'\n;globalThis.__T={game,Game,Lem,LEVELS,S,sfx,W,H,MAX_FALL,STEP_MS};',sandbox);
   return sandbox;
 }
 
@@ -165,6 +165,24 @@ test('level 1 "Just Dig!" is solvable with diggers, no splats, all 10 saved',()=
   assertEq(splats,0,'lemmings splatted');
   assertEq(g.lemmingsSaved,10,'saved count');
   assertEq(g.gameState,'results','level should have ended');
+});
+
+test('every level loads with a self-consistent, playable configuration',()=>{
+  for(let i=0;i<T.LEVELS.length;i++){
+    const lv=T.LEVELS[i];
+    const g=new T.Game();
+    g.loadLevel(i);
+    assertEq(g.gameState,'playing',`level ${i+1} should start playing`);
+    assert(lv.total>0,`level ${i+1}: must release some lemmings`);
+    assert(lv.need>0&&lv.need<=lv.total,`level ${i+1}: need (${lv.need}) must be in 1..total`);
+    assert(lv.time>0,`level ${i+1}: must have a positive time limit`);
+    // A spawned lemming drops out of the hatch, so the entrance must be air.
+    assert(!g.isSolid(lv.entrance.x,lv.entrance.y),`level ${i+1}: entrance must be open air`);
+    // The exit has to sit inside the world bounds to ever be reachable.
+    assert(lv.exit.x>0&&lv.exit.x<T.W&&lv.exit.y>0&&lv.exit.y<400,`level ${i+1}: exit must be in bounds`);
+    const skillTotal=Object.keys(lv.skills).reduce((s,k)=>s+lv.skills[k],0);
+    assert(skillTotal>0,`level ${i+1}: must grant at least one skill`);
+  }
 });
 
 // ---------- walking physics ----------
@@ -311,6 +329,19 @@ test('bomber blasts a crater in dirt but not steel, and skills deplete',()=>{
   assertEq(td(g,120,305),1,'dirt outside the radius must survive');
 });
 
+test('clicking a splatting lemming wastes no ability',()=>{
+  const g=blankGame();
+  fill(g,100,300,300,310);
+  g.skills={0:5};               // climbers can normally be assigned in any state
+  g.selectAbility(0);
+  const l=walker(g,150,299);
+  l.state=S.SPLAT;l.splatFrame=0;
+  g.scrollX=0;
+  g.handleClick(150,293);       // right on top of the lemming (its body is at y-6)
+  assert(!l.isClimber,'a dying (splatting) lemming must not receive abilities');
+  assertEq(g.skills[0],5,'no climber charge should be spent');
+});
+
 // ---------- nuke ----------
 test('nuke closes the entrance and ends the level once everyone is gone',()=>{
   const g=new T.Game();
@@ -323,6 +354,24 @@ test('nuke closes the entrance and ends the level once everyone is gone',()=>{
   assertEq(g.lemmingsOut,out,'entrance must stop releasing during a nuke');
   assertEq(g.countActive(),0,'all lemmings should be gone');
   assertEq(g.gameState,'results','nuked level must still end');
+});
+
+// ---------- main loop (fixed timestep) ----------
+test('stepSim runs the sim at a fixed 60Hz regardless of frame rate',()=>{
+  const STEP=T.STEP_MS;
+  const g=blankGame();
+  fill(g,100,300,300,310);
+  walker(g,200,299).state=S.BLOCK;   // keep one lemming live so the level stays playing
+  g._acc=0;g.fastMode=false;
+  assertEq(g.stepSim(STEP),1,'one 60Hz frame should run exactly one tick');
+  g._acc=0;
+  const hitch=g.stepSim(5*STEP);
+  assert(hitch>=4&&hitch<=5,`a 5-frame hitch should run ~5 ticks (not 1), got ${hitch}`);
+  g._acc=0;g.fastMode=true;
+  assertEq(g.stepSim(STEP),3,'fast mode should run 3 ticks per frame');
+  g.fastMode=false;g._acc=0;
+  const huge=g.stepSim(100000);
+  assert(huge>0&&huge<=16,`a long background gap must be clamped (no catch-up spiral), got ${huge}`);
 });
 
 // ---------- UI state ----------
@@ -350,6 +399,18 @@ test('ability selection toggles and rejects empty skills',()=>{
   assertEq(g.selectedAbility,-1,'empty skill must not select');
 });
 
+test('a selected ability auto-deselects when its last charge is spent',()=>{
+  const g=blankGame();
+  fill(g,100,300,300,310);
+  g.skills={6:1};                 // a single digger
+  g.selectAbility(6);
+  assertEq(g.selectedAbility,6,'digger should select');
+  const l=walker(g,150,299);
+  g.assignAbility(l,6);           // spends the last charge
+  assertEq(l.state,S.DIG,'digger should be assigned');
+  assertEq(g.selectedAbility,-1,'an exhausted ability should auto-deselect');
+});
+
 test('keyboard shortcuts work and leave browser shortcuts alone',()=>{
   const g=new T.Game();
   g.loadLevel(0);
@@ -371,6 +432,17 @@ test('keyboard shortcuts work and leave browser shortcuts alone',()=>{
   assertEq(g.selectedAbility,6,'key 7 should select the digger');
   h(ev('Escape'));
   assertEq(g.selectedAbility,-1,'Escape should deselect');
+});
+
+test('R restarts the current level',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  for(let i=0;i<200;i++)g.update();           // let some lemmings spawn
+  assert(g.lemmingsOut>0,'some lemmings should have been released');
+  const h=sb.window._handlers.keydown[sb.window._handlers.keydown.length-1];
+  h({key:'r',repeat:false,preventDefault(){}});
+  assertEq(g.lemmingsOut,0,'restart should reset the release count');
+  assertEq(g.gameState,'playing','game should still be playing after a restart');
 });
 
 test('release rate clamps to [10,99]',()=>{

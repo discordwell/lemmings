@@ -46,6 +46,7 @@ all stop at it.
 | `P` / `Space` | Pause |
 | `F` | Fast-forward (3×) |
 | `N` | Nuke (arms every lemming as a bomber) |
+| `R` | Restart the current level |
 | `M` | Mute |
 | `-` / `=` | Release rate down / up |
 | Mouse at screen edge, or click minimap | Scroll |
