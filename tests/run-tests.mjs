@@ -227,6 +227,17 @@ test('walker reverses at a blocker',()=>{
   assert(l.x<200,'walker should have walked back');
 });
 
+test('a blocker whose footing is removed starts falling',()=>{
+  const g=blankGame();
+  fill(g,100,300,300,310);
+  const b=walker(g,200,299);b.state=S.BLOCK;
+  g.update();
+  assertEq(b.state,S.BLOCK,'blocker stays put while it has footing');
+  for(let x=195;x<=205;x++)for(let y=300;y<=310;y++)g.removeTerrain(x,y);  // dig it out
+  g.update();
+  assertEq(b.state,S.FALL,'a blocker with no footing should fall');
+});
+
 // ---------- falling ----------
 test('long fall splats a plain lemming but a floater survives',()=>{
   const g=blankGame();
@@ -279,6 +290,28 @@ test('digger digs a shaft and stops on steel below',()=>{
   assertEq(Math.round(l.y),330,'lemming should stand on the steel');
 });
 
+test('miner carves a diagonal tunnel through dirt and stops at steel',()=>{
+  const g=blankGame();
+  fill(g,100,400,300,360);     // thick dirt slab, standing row 299
+  fill(g,100,400,361,375,2);   // steel floor the diagonal tunnel runs into
+  const steelBefore=g.terrainData.filter(t=>t===2).length;
+  const dirtBefore=g.terrainData.filter(t=>t===1).length;
+  g.skills={7:1};
+  const l=walker(g,150,299);   // facing right
+  const sx=l.x,sy=l.y;
+  let assigned=false;
+  runUntil(g,3000,()=>assigned&&l.state===S.WALK,()=>{
+    if(!assigned&&l.state===S.WALK){g.assignAbility(l,7);assigned=l.state===S.MINE;}
+  });
+  assert(assigned,'miner was never assigned');
+  assert(!l.dead,'miner should not die');
+  // Diagonal: it must both descend AND advance (a digger only descends, a basher only advances).
+  assert(l.y-sy>40,`miner should descend (dy=${l.y-sy})`);
+  assert(l.x-sx>40,`miner should advance (dx=${l.x-sx})`);
+  assert(dirtBefore-g.terrainData.filter(t=>t===1).length>30,'miner should carve out dirt');
+  assertEq(g.terrainData.filter(t=>t===2).length,steelBefore,'steel must never be removed by mining');
+});
+
 test('builder bridges a 40px gap',()=>{
   const g=blankGame();
   fill(g,100,200,300,320);     // near side
@@ -294,6 +327,26 @@ test('builder bridges a 40px gap',()=>{
   assert(bricks>20,`expected a bridge over the gap, found ${bricks} brick pixels`);
   assert(!l.dead,'builder fell into the gap');
   assert(l.x>260,`builder should reach the far side (x=${l.x})`);
+});
+
+test('a builder never converts the steel it builds over into diggable earth',()=>{
+  const g=blankGame();
+  fill(g,100,400,300,310,2);   // steel floor; the builder stands on top at row 299
+  const steelBefore=g.terrainData.filter(t=>t===2).length;
+  g.skills={4:1};
+  const l=walker(g,150,299);   // facing right, building a rising bridge over the steel
+  let assigned=false;
+  runUntil(g,1500,()=>assigned&&l.state!==S.BUILD,()=>{
+    if(!assigned&&l.state===S.WALK){g.assignAbility(l,4);assigned=l.state===S.BUILD;}
+  });
+  assert(assigned,'builder was never assigned');
+  // The first brick row sits on the steel; without the guard it would be rewritten to earth.
+  assertEq(td(g,150,300),2,'steel beneath the bridge start must remain steel');
+  assertEq(g.terrainData.filter(t=>t===2).length,steelBefore,'building must not destroy any steel');
+  // The bridge itself should still have been laid (earth bricks above the steel).
+  let bricks=0;
+  for(let x=150;x<=180;x++)for(let y=286;y<=299;y++)if(td(g,x,y)===1)bricks++;
+  assert(bricks>0,'a bridge should still be built above the steel');
 });
 
 test('climber scales a wall and walks on from the top',()=>{

@@ -14,7 +14,9 @@ sections in source order: constants, `SFX`, `Particle`, terrain helpers,
   - `terrainCanvas` — offscreen canvas holding the **visual** terrain, blitted
     to the main canvas each frame.
   - `removeTerrain(x,y)` only removes type `1` (steel survives everything) and
-    clears the canvas pixel; `addTerrain(x,y,r,g,b)` sets type `1` and paints.
+    clears the canvas pixel; `addTerrain(x,y,r,g,b)` paints diggable earth
+    (type `1`) but never over steel — so a builder's bricks lay on top of steel
+    without ever turning it diggable.
 - A lemming's `(x, y)` is its feet. "Standing" means `(x,y)` is air and
   `(x,y+1)` is solid.
 
@@ -90,9 +92,11 @@ persist to `localStorage` under `lemmings.unlocked`.
 `localStorage`/`requestAnimationFrame`, and drives `game.update()` directly —
 rendering is stubbed to no-ops, simulation runs for real. Coverage includes a
 scripted solve of level 1 (asserting zero splats and all 10 saved), a config
-sanity check across every level, per-skill physics scenarios on hand-built
-terrain, steel invulnerability, nuke flow, the fixed-timestep loop (`stepSim`),
-ability auto-deselect, timer display, and persistence. Add a test alongside any physics or rules
+sanity check across every level, a physics scenario for each of the eight
+skills on hand-built terrain, steel invulnerability against both destructive
+skills and builders, a blocker dropped when its footing is dug out, nuke flow,
+the fixed-timestep loop (`stepSim`), ability auto-deselect, timer display, and
+persistence. Add a test alongside any physics or rules
 change; hand-built terrain via the `fill()` helper keeps scenarios
 deterministic (level generators sprinkle random grass, so prefer blank
 terrain for precise assertions).
