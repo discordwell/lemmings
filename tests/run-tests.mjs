@@ -167,6 +167,134 @@ test('level 1 "Just Dig!" is solvable with diggers, no splats, all 10 saved',()=
   assertEq(g.gameState,'results','level should have ended');
 });
 
+// The remaining levels are driven by small scripted "bots" that play the
+// intended solution, proving each level is actually winnable (or, for the
+// gauntlet, traversable) — not just internally consistent. The bots only read
+// state the player can see (positions, terrain) and act through the same
+// assignAbility/releaseRate the UI uses. They are deterministic: level
+// generators sprinkle 1px random grass, but the strategies tolerate it, so
+// every assertion below holds across repeated runs with comfortable margins.
+
+// A wall blocks the path when there is solid terrain just ahead at head height.
+function wallAhead(g,l){
+  const x=Math.round(l.x)+l.dir*2,y=Math.round(l.y);
+  return g.isSolid(x,y-3)&&g.isSolid(x,y-7);
+}
+
+test('level 2 "Bridge the Gap" is solvable by building across the gap',()=>{
+  const g=new T.Game();
+  g.loadLevel(1);
+  // Slow the hatch so few lemmings reach the gap before the bridge spans it.
+  g.releaseRate=10;
+  let builder=null;
+  for(let tick=0;tick<12000&&g.gameState==='playing';tick++){
+    // Designate the first lemming heading into the gap as the bridge builder...
+    if(!builder){
+      for(const l of g.lemmings){
+        if(l.active&&!l.dead&&!l.saved&&l.state===S.WALK&&l.dir===1&&l.x>=330&&l.x<360){builder=l;break;}
+      }
+    }
+    // ...and keep re-assigning Builder (each charge resumes the last) until it
+    // has carried the staircase past the gap onto the far platform.
+    if(builder&&builder.active&&!builder.dead&&!builder.saved&&
+       builder.state===S.WALK&&builder.x<515&&g.skills[4]>0){
+      g.assignAbility(builder,4);
+    }
+    g.update();
+  }
+  // saved >= need is exactly endLevel's win condition, so this asserts a win
+  // (the bot reliably saves 12; the gap costs a few that don't reach the bridge).
+  assert(g.lemmingsSaved>=T.LEVELS[1].need,
+    `should save at least need=${T.LEVELS[1].need}, saved ${g.lemmingsSaved}`);
+});
+
+test('level 3 "Bash Street" is solvable by bashing through the walls',()=>{
+  const g=new T.Game();
+  g.loadLevel(2);
+  // Only one basher should work a given wall at a time — a piled-up crowd would
+  // otherwise spend every charge on the same wall before it is cleared.
+  const bashingNear=x=>g.lemmings.some(o=>
+    o.active&&!o.dead&&!o.saved&&o.state===S.BASH&&Math.abs(o.x-x)<40);
+  for(let tick=0;tick<16000&&g.gameState==='playing';tick++){
+    for(const l of g.lemmings){
+      if(!l.active||l.dead||l.saved||l.state!==S.WALK||l.dir!==1)continue;
+      if(g.skills[5]>0&&wallAhead(g,l)&&!bashingNear(l.x))g.assignAbility(l,5);
+    }
+    g.update();
+  }
+  assert(g.lemmingsSaved>=T.LEVELS[2].need,   // win condition; bot saves all 20
+    `should save at least need=${T.LEVELS[2].need}, saved ${g.lemmingsSaved}`);
+});
+
+test('level 4 "Over the Top" is solvable with climbers, floaters and a bridge',()=>{
+  const g=new T.Game();
+  g.loadLevel(3);
+  let bridgeLem=null,bridgeDone=false;
+  for(let tick=0;tick<16000&&g.gameState==='playing';tick++){
+    // Make everyone a climber+floater: scale the central wall, float into the pit.
+    for(const l of g.lemmings){
+      if(!l.active||l.dead||l.saved)continue;
+      if(!l.isClimber&&g.skills[0]>0)g.assignAbility(l,0);
+      if(!l.isFloater&&g.skills[1]>0)g.assignAbility(l,1);
+    }
+    // One lemming bridges the bottomless pit from the top of the wall so the
+    // floaters land on the far (exit) platform instead of in the pit.
+    if((!bridgeLem||bridgeLem.dead||bridgeLem.saved)&&!bridgeDone){
+      for(const l of g.lemmings){
+        if(l.active&&!l.dead&&!l.saved&&l.state===S.WALK&&l.dir===1&&
+           l.y<95&&l.x>=402&&l.x<=430){bridgeLem=l;break;}
+      }
+    }
+    if(bridgeLem&&bridgeLem.active&&!bridgeLem.dead&&!bridgeLem.saved){
+      if(bridgeLem.x>=505)bridgeDone=true;
+      else if(bridgeLem.state===S.WALK&&g.skills[4]>0)g.assignAbility(bridgeLem,4);
+    }
+    g.update();
+  }
+  assert(g.lemmingsSaved>=T.LEVELS[3].need,   // win condition; bot saves 18
+    `should save at least need=${T.LEVELS[3].need}, saved ${g.lemmingsSaved}`);
+});
+
+test('level 5 "The Gauntlet" path is traversable end-to-end',()=>{
+  // The gauntlet chains every mechanic, so verify the intended route actually
+  // connects: a single lemming bashes a wall, builds over a gap, mines through
+  // a mass, then climbs the final wall and floats to the exit. (Saving the full
+  // quota also needs crowd management; here we prove the path itself exists.)
+  const g=new T.Game();
+  g.loadLevel(4);
+  g.releaseRate=10;
+  // Climber/Floater are withheld until the final wall on purpose: with them
+  // from the start the lead could just climb over the section-4 mass, so the
+  // mine step would never be exercised. Holding them back forces a real mine.
+  let lead=null,phase='bash';
+  for(let tick=0;tick<8000&&g.gameState==='playing';tick++){
+    if(!lead){
+      for(const l of g.lemmings)if(l.active&&!l.dead){lead=l;break;}
+    }
+    if(lead&&lead.active&&!lead.dead&&!lead.saved){
+      const x=Math.round(lead.x),y=Math.round(lead.y),walkR=lead.state===S.WALK&&lead.dir===1;
+      if(phase==='bash'){                                              // section 2: bash the wall
+        if(walkR&&y>200&&y<215&&x>=300&&x<322&&wallAhead(g,lead)&&g.skills[5]>0)g.assignAbility(lead,5);
+        if(x>350&&y>200&&y<215)phase='build';
+      }else if(phase==='build'){                                       // section 3: bridge the gap
+        if(walkR&&y>200&&y<215&&x>=453&&x<465&&g.skills[4]>0)g.assignAbility(lead,4);
+        if(x>=498)phase='mine';
+      }else if(phase==='mine'){                                        // section 4: mine the mass
+        if(walkR&&g.skills[7]>0&&wallAhead(g,lead))g.assignAbility(lead,7);
+        if(lead.state===S.WALK&&y>255)phase='wall';
+      }else if(phase==='wall'){                                        // section 5: climb over, float down
+        if(!lead.isClimber&&g.skills[0]>0)g.assignAbility(lead,0);
+        if(!lead.isFloater&&g.skills[1]>0)g.assignAbility(lead,1);
+      }
+    }
+    if(lead&&lead.saved)break;
+    g.update();
+  }
+  assert(lead&&lead.saved,
+    `a lemming should reach the exit through the gauntlet (lead: ${
+      lead?`x=${Math.round(lead.x)} y=${Math.round(lead.y)} dead=${lead.dead}`:'never spawned'})`);
+});
+
 test('every level loads with a self-consistent, playable configuration',()=>{
   for(let i=0;i<T.LEVELS.length;i++){
     const lv=T.LEVELS[i];

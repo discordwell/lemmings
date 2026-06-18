@@ -90,13 +90,26 @@ persist to `localStorage` under `lemmings.unlocked`.
 `tests/run-tests.mjs` (plain Node, no deps) extracts the script from
 `index.html`, evaluates it in a `vm` sandbox with stub `document`/canvas/
 `localStorage`/`requestAnimationFrame`, and drives `game.update()` directly —
-rendering is stubbed to no-ops, simulation runs for real. Coverage includes a
-scripted solve of level 1 (asserting zero splats and all 10 saved), a config
-sanity check across every level, a physics scenario for each of the eight
-skills on hand-built terrain, steel invulnerability against both destructive
-skills and builders, a blocker dropped when its footing is dug out, nuke flow,
-the fixed-timestep loop (`stepSim`), ability auto-deselect, timer display, and
-persistence. Add a test alongside any physics or rules
-change; hand-built terrain via the `fill()` helper keeps scenarios
-deterministic (level generators sprinkle random grass, so prefer blank
-terrain for precise assertions).
+rendering is stubbed to no-ops, simulation runs for real. Coverage falls into
+two layers:
+
+- **Solvability** — every shipped level is played end-to-end by a small scripted
+  bot that executes its intended solution and asserts the result. Levels 1–4
+  assert that at least `need` lemmings are saved (level 1 additionally asserts
+  zero splats and all 10 saved); level 5 "The Gauntlet" asserts that one lemming
+  can *traverse* the full chain (bash → build → mine → climb → float) to the
+  exit, proving the route connects. These bots only read player-visible state
+  and act through `assignAbility`/`releaseRate`, so they double as living
+  documentation of each solution — and they catch any physics or geometry change
+  that silently makes a level unwinnable. A separate config sanity check asserts
+  every level is internally consistent (need ≤ total, open entrance, in-bounds
+  exit, some skills).
+- **Mechanics** — a physics scenario for each of the eight skills on hand-built
+  terrain, steel invulnerability against both destructive skills and builders, a
+  blocker dropped when its footing is dug out, nuke flow, the fixed-timestep loop
+  (`stepSim`), ability auto-deselect, timer display, and persistence.
+
+Add a test alongside any physics or rules change; hand-built terrain via the
+`fill()` helper keeps scenarios deterministic (level generators sprinkle random
+grass, so prefer blank terrain for precise assertions — the level bots instead
+use position/state tolerances that absorb the 1px grass jitter).

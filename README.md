@@ -56,7 +56,9 @@ Five levels, unlocked in order; progress persists in `localStorage`.
 ## Tests
 
 A zero-dependency test suite drives the game logic headlessly (Node `vm` with
-DOM stubs), including a scripted bot that solves level 1 end-to-end:
+DOM stubs). Scripted bots play every level's intended solution end-to-end —
+proving each level is actually winnable (level 5's gauntlet is verified
+traversable) — alongside per-skill physics scenarios and UI/persistence checks:
 
 ```sh
 node tests/run-tests.mjs   # Node 18+
