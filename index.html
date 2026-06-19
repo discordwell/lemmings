@@ -7,8 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#06050e;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Press Start 2P',monospace;overflow:hidden;color:#c0c0c0}
-#game-wrapper{width:960px;position:relative;user-select:none}
+body{background:#06050e;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Press Start 2P',monospace;color:#c0c0c0;padding:8px;overflow-x:hidden}
+#game-wrapper{width:100%;max-width:960px;position:relative;user-select:none}
 #header{background:#110e1f;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:8px;border:2px solid #2a2444;border-bottom:1px solid #2a2444;color:#7fefab}
 #header span{display:inline-flex;align-items:center;gap:4px}
 .stat-val{color:#f0e060;min-width:24px;text-align:right}
@@ -16,9 +16,9 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
 #canvas-wrap{position:relative;border:2px solid #2a2444;border-top:none;border-bottom:none;background:#000;overflow:hidden}
 #gameCanvas{width:100%;display:block;image-rendering:pixelated;image-rendering:crisp-edges;cursor:crosshair}
 #minimapCanvas{position:absolute;top:6px;right:6px;border:1px solid #7fefab;opacity:0.85;image-rendering:pixelated;cursor:pointer}
-#toolbar{background:#110e1f;padding:6px 8px;display:flex;align-items:stretch;gap:4px;border:2px solid #2a2444;border-top:1px solid #1a1530}
+#toolbar{background:#110e1f;padding:6px 8px;display:flex;align-items:stretch;gap:4px;border:2px solid #2a2444;border-top:1px solid #1a1530;flex-wrap:wrap;justify-content:center}
 .tool-section{display:flex;gap:3px;align-items:stretch}
-.tool-section.abilities{flex:1;justify-content:center}
+.tool-section.abilities{flex:1;justify-content:center;flex-wrap:wrap}
 .tool-divider{width:1px;background:#2a2444;margin:0 4px}
 .ability-btn{background:#1a1530;border:2px solid #2a2444;color:#8888aa;font-family:'Press Start 2P',monospace;font-size:6px;padding:4px 2px;cursor:pointer;text-align:center;min-width:52px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .15s;position:relative}
 .ability-btn:hover{background:#252040;border-color:#4a4470;color:#bbbbdd}
@@ -43,7 +43,24 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
 .level-btn{background:#1a1530;border:2px solid #2a2444;color:#8888aa;font-family:'Press Start 2P',monospace;font-size:8px;padding:8px 12px;cursor:pointer;margin:4px;transition:all .15s;min-width:100px}
 .level-btn:hover{background:#252040;border-color:#7fefab;color:#7fefab}
 .level-btn.locked{opacity:.3;cursor:default;pointer-events:none}
+.level-best{color:#f0e060;font-size:6px;line-height:2.2;letter-spacing:0}
 .scanlines{position:absolute;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);pointer-events:none;z-index:5}
+/* On narrower screens the wrapper shrinks to fit the viewport (max-width:960px)
+   and the toolbar reflows instead of being clipped. Give the abilities their own
+   centred row so they form a tidy grid rather than being squeezed to one column
+   between the rate and playback controls. */
+@media (max-width:768px){
+  .tool-section.abilities{flex-basis:100%;order:-1}
+  .tool-divider{display:none}
+  .ability-btn{min-width:44px;font-size:5px;padding:3px 1px}
+  .ability-btn .ab-icon{font-size:11px;height:14px}
+  #minimapCanvas{width:140px;height:auto}   /* height:auto keeps the 4:1 ratio */
+}
+@media (max-width:480px){
+  #header{font-size:7px;flex-wrap:wrap;justify-content:center;gap:4px 10px}
+  .ability-btn{min-width:38px}
+  #minimapCanvas{width:110px;height:auto}
+}
 </style>
 </head>
 <body>
@@ -91,6 +108,7 @@ const STEP_MS=1000/60;   // fixed simulation timestep (60 Hz)
 // must win over a ledge overhead, else lemmings pop up through bridges/covers.
 const STEP_SCAN=[0,1,-1,2,-2,3,-3,-4,-5,-6];
 const SAVE_KEY='lemmings.unlocked';
+const BEST_KEY='lemmings.best';   // per-level best save count, persisted
 const ABILITIES=['Climber','Floater','Bomber','Blocker','Builder','Basher','Digger','Miner'];
 const AB_ICONS=['\u2191','\u2602','\u2622','\u2716','\u2692','\u2694','\u26CF','\u26A0'];
 const S={WALK:0,FALL:1,CLIMB:2,FLOAT:3,BUILD:4,BASH:5,DIG:6,MINE:7,BLOCK:8,SPLAT:9,EXIT:10,DEAD:11};
@@ -437,6 +455,23 @@ class Game {
       const u=parseInt(localStorage.getItem(SAVE_KEY),10);
       if(u>=1&&u<=LEVELS.length)this.unlockedLevels=u;
     }catch(e){}
+    // Best save count per level (highest "SAVED" ever reached), persisted so
+    // the level-select and results screens can show a target to beat.
+    this.bestScores={};
+    try{
+      const raw=localStorage.getItem(BEST_KEY);
+      if(raw){
+        const o=JSON.parse(raw);
+        if(o&&typeof o==='object')for(const k in o){
+          const i=+k,v=+o[k];
+          // Keep only canonical integer "levelIndex":savedCount pairs in range —
+          // String(i)===k rejects ""/decimal/leading-zero keys, and validating v
+          // as an integer rejects floats/NaN from a hand-edited or corrupt store.
+          if(Number.isInteger(i)&&String(i)===k&&i>=0&&i<LEVELS.length&&
+             Number.isInteger(v)&&v>=0&&v<=LEVELS[i].total)this.bestScores[i]=v;
+        }
+      }
+    }catch(e){}
     this.miniImageData=null;
     this.nuking=false;this.nukeIdx=0;this.nukeArmed=false;
     this.scrollKeys=new Set();   // viewport scroll keys currently held (L/R)
@@ -561,6 +596,9 @@ class Game {
       // Held-key viewport scrolling (released via keyup); the loop applies it.
       else if(k==='ArrowLeft'||k==='a'||k==='A'){e.preventDefault();this.scrollKeys.add('L');}
       else if(k==='ArrowRight'||k==='d'||k==='D'){e.preventDefault();this.scrollKeys.add('R');}
+      // Swallow vertical-scroll keys so they can't scroll the page out from under
+      // a tall layout on a short viewport (the game itself doesn't use them).
+      else if(k==='ArrowUp'||k==='ArrowDown'||k==='PageUp'||k==='PageDown'){e.preventDefault();}
     });
     window.addEventListener('keyup',e=>{
       const k=e.key;
@@ -941,17 +979,26 @@ class Game {
     if(l.splatFrame>20){l.dead=true;l.active=false;}
   }
 
+  // Record a new per-level best if this run beat it; returns true when it did.
+  recordBest(idx,saved){
+    if(saved<=(this.bestScores[idx]||0))return false;
+    this.bestScores[idx]=saved;
+    try{localStorage.setItem(BEST_KEY,JSON.stringify(this.bestScores))}catch(e){}
+    return true;
+  }
+
   endLevel(){
     this.cancelNukeArm();
     const lv=LEVELS[this.currentLevel];
     const won=this.lemmingsSaved>=lv.need;
+    const newBest=this.recordBest(this.currentLevel,this.lemmingsSaved);
     if(won&&this.currentLevel+1>=this.unlockedLevels&&this.currentLevel+1<LEVELS.length){
       this.unlockedLevels=this.currentLevel+2;
       try{localStorage.setItem(SAVE_KEY,this.unlockedLevels)}catch(e){}
     }
     this.gameState='results';
     sfx.play(won?'win':'lose');
-    this.showResults(won);
+    this.showResults(won,newBest);
   }
 
   handleScroll(){
@@ -1153,20 +1200,29 @@ class Game {
     this.gameState='levelSelect';
     let html='<h2>SELECT LEVEL</h2><div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:16px 0">';
     LEVELS.forEach((lv,i)=>{
-      html+=`<button class="level-btn ${i>=this.unlockedLevels?'locked':''}" onclick="game.loadLevel(${i})">${i+1}. ${lv.name}</button>`;
+      const best=this.bestScores[i];
+      const bestTxt=best!==undefined
+        ? `<br><span class="level-best">best ${best}/${lv.total}${best>=lv.need?' &#10004;':''}</span>`
+        : '';
+      html+=`<button class="level-btn ${i>=this.unlockedLevels?'locked':''}" onclick="game.loadLevel(${i})">${i+1}. ${lv.name}${bestTxt}</button>`;
     });
     html+='</div><button class="overlay-btn secondary" onclick="game.showTitle()">BACK</button>';
     document.getElementById('overlay-content').innerHTML=html;
     document.getElementById('overlay').classList.remove('hidden');
   }
 
-  showResults(won){
+  showResults(won,newBest){
     const lv=LEVELS[this.currentLevel];
     const pct=Math.round(this.lemmingsSaved/lv.total*100);
+    const best=this.bestScores[this.currentLevel]||0;
+    const bestLine=newBest
+      ? `<p style="color:#f0e060">&#9733; NEW BEST! ${best} / ${lv.total}</p>`
+      : `<p>Best: ${best} / ${lv.total}</p>`;
     document.getElementById('overlay-content').innerHTML=`
       <h2>${won?'LEVEL COMPLETE!':'LEVEL FAILED'}</h2>
       <div class="big-stat">${this.lemmingsSaved} / ${lv.total} saved (${pct}%)</div>
-      <p>Needed: ${lv.need}</p><br>
+      <p>Needed: ${lv.need}</p>
+      ${bestLine}<br>
       <div>
         <button class="overlay-btn secondary" onclick="game.loadLevel(${this.currentLevel})">RETRY</button>
         ${won&&this.currentLevel<LEVELS.length-1?`<button class="overlay-btn" onclick="game.loadLevel(${this.currentLevel+1})">NEXT LEVEL</button>`:''}

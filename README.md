@@ -55,7 +55,14 @@ all stop at it.
 The nuke is instant and irreversible, so — like the original — it takes a
 confirming second press (`Esc` or right-click cancels a pending nuke).
 
-Five levels, unlocked in order; progress persists in `localStorage`.
+Five levels, unlocked in order; progress persists in `localStorage`. Each level
+also remembers your best save count — shown on the level-select and results
+screens, with a "NEW BEST!" callout when you beat it — so there's a target to
+chase for a 100% run.
+
+The layout is responsive: it fills the window up to 960px wide and reflows down
+to phone widths (the ability bar wraps onto its own row), so it stays fully
+usable on small screens instead of being clipped.
 
 ## Tests
 

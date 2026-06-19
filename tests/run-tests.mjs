@@ -708,7 +708,69 @@ test('arrow / A-D keys scroll the viewport and stop on key release',()=>{
   assertEq(g.scrollKeys.size,0,'loading a level clears held scroll keys');
 });
 
+test('vertical scroll keys are swallowed during play (no page scroll)',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  const h=sb.window._handlers.keydown[sb.window._handlers.keydown.length-1];
+  const press=key=>{let prevented=false;h({key,repeat:false,preventDefault(){prevented=true;}});return prevented;};
+  for(const k of ['ArrowUp','ArrowDown','PageUp','PageDown'])
+    assert(press(k),`${k} should be preventDefault-ed so it can't scroll the page`);
+});
+
 // ---------- persistence ----------
+test('best save count persists per level and only ever improves',()=>{
+  sb.__store.clear();
+  const g=new T.Game();
+  assertEq(Object.keys(g.bestScores).length,0,'a fresh game has no best scores');
+  const finish=saved=>{g.loadLevel(0);g.lemmingsSaved=saved;g.lemmingsOut=T.LEVELS[0].total;g.endLevel();};
+  finish(6);
+  assertEq(g.bestScores[0],6,'first finish records the best');
+  assertEq(sb.__store.get('lemmings.best'),'{"0":6}','best is written to storage');
+  finish(3);
+  assertEq(g.bestScores[0],6,'a worse run must not lower the best');
+  finish(9);
+  assertEq(g.bestScores[0],9,'a better run raises the best');
+  const g2=new T.Game();
+  assertEq(g2.bestScores[0],9,'a new session restores the best from localStorage');
+});
+
+test('the results screen shows the best and flags a new best only when beaten',()=>{
+  sb.__store.clear();
+  const g=new T.Game();
+  const finish=saved=>{g.loadLevel(0);g.lemmingsSaved=saved;g.lemmingsOut=T.LEVELS[0].total;g.endLevel();return sb.__els['overlay-content'].innerHTML;};
+  let html=finish(8);
+  assert(/NEW BEST! 8 \/ 10/.test(html),'the first finish should flag a new best of 8/10');
+  html=finish(4);
+  assert(!/NEW BEST/.test(html),'a worse run must not flag a new best');
+  assert(/Best: 8 \/ 10/.test(html),'a worse run still shows the standing best 8/10');
+});
+
+test('the level-select screen shows each played level\'s best',()=>{
+  sb.__store.clear();
+  const g=new T.Game();
+  g.loadLevel(0);
+  g.lemmingsSaved=7;g.lemmingsOut=T.LEVELS[0].total;
+  g.endLevel();                       // best 7/10 for level 1 (also meets need=7)
+  g.showLevelSelect();
+  const html=sb.__els['overlay-content'].innerHTML;
+  assert(/best 7\/10/.test(html),'level select should show the level-1 best');
+  assert(!/best \d+\/15/.test(html),'an unplayed level should show no best line');
+});
+
+test('a corrupt best-score store is ignored, not fatal',()=>{
+  sb.__store.clear();
+  sb.__store.set('lemmings.best','not json{');
+  const g=new T.Game();                 // must not throw
+  assertEq(Object.keys(g.bestScores).length,0,'garbage storage yields no best scores');
+  // Bad entries are filtered: 99 > level-0 total (10); a float and a non-canonical
+  // "" key are rejected; only the in-range integer under a canonical key survives.
+  sb.__store.set('lemmings.best','{"0":99,"1":5,"2":2.5,"":9}');
+  const g2=new T.Game();
+  assert(g2.bestScores[0]===undefined,'an impossible best (>total) is dropped');
+  assert(g2.bestScores[2]===undefined,'a fractional best is dropped');
+  assertEq(g2.bestScores[1],5,'a valid best is kept');
+});
+
 test('level unlocks persist via localStorage',()=>{
   sb.__store.clear();
   const g=new T.Game();

@@ -92,8 +92,21 @@ buffers, no samples. `sfx.init()` must be called from a user gesture (browser
 autoplay policy), so every input handler calls it.
 
 UI state outside the canvas (header counters, timer, skill counts, button
-states) is plain DOM updated by `updateHeader`/`updateSkillUI`. Level unlocks
-persist to `localStorage` under `lemmings.unlocked`.
+states) is plain DOM updated by `updateHeader`/`updateSkillUI`. Two pieces of
+progress persist to `localStorage`: level unlocks under `lemmings.unlocked`, and
+the best save count per level under `lemmings.best` (a JSON `{levelIndex: saved}`
+map). `endLevel` calls `recordBest`, which only ever raises a level's best (a
+worse replay can't lower it) and rewrites the JSON; both the level-select and
+results screens read `bestScores` to show the target/`NEW BEST!`. Loads of either
+key are wrapped in `try/catch` and range-validated, so corrupt storage is ignored
+rather than fatal.
+
+The page is laid out so the `#game-wrapper` fills the viewport up to a 960px cap
+(`width:100%;max-width:960px`); the canvas is a replaced element at a fixed 2:1
+ratio, so it scales with the wrapper. Below ~768px the toolbar's flex row wraps
+and the ability bar takes its own full-width row (`flex-basis:100%`) to stay a
+tidy grid instead of being squeezed; a second breakpoint reflows the header.
+Nothing is clipped down to ~320px.
 
 ## Tests
 
@@ -118,7 +131,9 @@ two layers:
   terrain, steel invulnerability against both destructive skills and builders, a
   blocker dropped when its footing is dug out, nuke flow (including the
   arm/confirm/cancel gate), the fixed-timestep loop (`stepSim`), held-key
-  viewport scrolling, ability auto-deselect, timer display, and persistence.
+  viewport scrolling, ability auto-deselect, timer display, and persistence —
+  level unlocks plus per-level best scores (only-improves, the results and
+  level-select readouts, and corrupt-store tolerance).
 
 Add a test alongside any physics or rules change; hand-built terrain via the
 `fill()` helper keeps scenarios deterministic (level generators sprinkle random
