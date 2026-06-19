@@ -73,7 +73,7 @@ body{background:#06050e;display:flex;justify-content:center;align-items:center;m
     <div class="tool-section">
       <button class="ctrl-btn" id="btn-pause" title="Pause (P)">&#9646;&#9646;</button>
       <button class="ctrl-btn" id="btn-fast" title="Fast forward (F)">&#9654;&#9654;</button>
-      <button class="ctrl-btn" id="btn-nuke" title="Nuke! (N)">&#9762;</button>
+      <button class="ctrl-btn" id="btn-nuke" title="Nuke! (N, press twice to confirm)">&#9762;</button>
       <button class="ctrl-btn" id="btn-mute" title="Mute (M)">&#9834;</button>
     </div>
   </div>
@@ -438,7 +438,8 @@ class Game {
       if(u>=1&&u<=LEVELS.length)this.unlockedLevels=u;
     }catch(e){}
     this.miniImageData=null;
-    this.nuking=false;this.nukeIdx=0;
+    this.nuking=false;this.nukeIdx=0;this.nukeArmed=false;
+    this.scrollKeys=new Set();   // viewport scroll keys currently held (L/R)
     this.frameCount=0;
     this._acc=0;   // fixed-timestep accumulator (ms of un-simulated real time)
     this.setupUI();
@@ -462,7 +463,7 @@ class Game {
     const ctl=(id,fn)=>{document.getElementById(id).onclick=e=>{e.currentTarget.blur();sfx.unlock();fn();};};
     ctl('btn-pause',()=>this.togglePause());
     ctl('btn-fast',()=>this.toggleFast());
-    ctl('btn-nuke',()=>this.startNuke());
+    ctl('btn-nuke',()=>this.requestNuke());   // arms; a confirming second click fires
     ctl('btn-mute',()=>this.toggleMute());
     ctl('btn-rate-down',()=>this.adjustRate(-5));
     ctl('btn-rate-up',()=>this.adjustRate(5));
@@ -491,9 +492,24 @@ class Game {
     this.fastMode=!this.fastMode;
     document.getElementById('btn-fast').classList.toggle('active',this.fastMode);
   }
+  // Nuke is instant and irreversible, so it takes a confirming second press
+  // (like the original): the first press arms it, the second fires it. Escape
+  // or right-click disarms a pending nuke. startNuke() is the real trigger.
+  requestNuke(){
+    if(this.gameState!=='playing'||this.nuking)return;
+    if(this.nukeArmed){this.startNuke();return;}
+    this.nukeArmed=true;
+    document.getElementById('btn-nuke').classList.add('active');
+  }
+  cancelNukeArm(){
+    if(!this.nukeArmed)return;
+    this.nukeArmed=false;
+    document.getElementById('btn-nuke').classList.remove('active');
+  }
   startNuke(){
     if(this.gameState!=='playing'||this.nuking)return;
-    this.nuking=true;this.nukeIdx=0;
+    this.nuking=true;this.nukeIdx=0;this.nukeArmed=false;
+    document.getElementById('btn-nuke').classList.add('active');
   }
   toggleMute(){
     sfx.on=!sfx.on;
@@ -524,7 +540,7 @@ class Game {
       const mx=(e.clientX-r.left)*(W/r.width);
       this.scrollX=Math.max(0,Math.min(W-VW,mx-VW/2));
     });
-    const cancelMenu=e=>{e.preventDefault();this.deselectAbility();};
+    const cancelMenu=e=>{e.preventDefault();this.deselectAbility();this.cancelNukeArm();};
     c.addEventListener('contextmenu',cancelMenu);
     this.miniCanvas.addEventListener('contextmenu',cancelMenu);
     window.addEventListener('keydown',e=>{
@@ -537,12 +553,23 @@ class Game {
       if(k>='1'&&k<='8'){sfx.unlock();this.selectAbility(k.charCodeAt(0)-49);}
       else if(k==='p'||k==='P'||k===' '){e.preventDefault();sfx.unlock();this.togglePause();}
       else if(k==='f'||k==='F')this.toggleFast();
-      else if(k==='n'||k==='N')this.startNuke();
-      else if(k==='Escape')this.deselectAbility();
+      else if(k==='n'||k==='N')this.requestNuke();
+      else if(k==='Escape'){this.deselectAbility();this.cancelNukeArm();}
       else if(k==='r'||k==='R')this.loadLevel(this.currentLevel);
       else if(k==='-'||k==='_')this.adjustRate(-5);
       else if(k==='='||k==='+')this.adjustRate(5);
+      // Held-key viewport scrolling (released via keyup); the loop applies it.
+      else if(k==='ArrowLeft'||k==='a'||k==='A'){e.preventDefault();this.scrollKeys.add('L');}
+      else if(k==='ArrowRight'||k==='d'||k==='D'){e.preventDefault();this.scrollKeys.add('R');}
     });
+    window.addEventListener('keyup',e=>{
+      const k=e.key;
+      if(k==='ArrowLeft'||k==='a'||k==='A')this.scrollKeys.delete('L');
+      else if(k==='ArrowRight'||k==='d'||k==='D')this.scrollKeys.delete('R');
+    });
+    // A key held while the window loses focus never gets its keyup; clear so the
+    // viewport doesn't keep scrolling after the player tabs away and back.
+    window.addEventListener('blur',()=>this.scrollKeys.clear());
   }
 
   handleClick(cx,cy){
@@ -641,7 +668,8 @@ class Game {
     this.levelTime=lv.time*60;this.lastSecsShown=-1;
     this.scrollX=Math.max(0,Math.min(W-VW,this.entranceX-VW/2));
     this.paused=false;this.fastMode=false;
-    this.nuking=false;this.nukeIdx=0;
+    this.nuking=false;this.nukeIdx=0;this.nukeArmed=false;
+    this.scrollKeys.clear();
     this.entranceAnim=0;this.frameCount=0;
     this.gameState='playing';
     this.deselectAbility();
@@ -649,6 +677,7 @@ class Game {
     this.updateHeader();
     document.getElementById('btn-pause').classList.remove('active');
     document.getElementById('btn-fast').classList.remove('active');
+    document.getElementById('btn-nuke').classList.remove('active');
     document.getElementById('overlay').classList.add('hidden');
     document.getElementById('level-name').textContent=lv.name;
   }
@@ -913,6 +942,7 @@ class Game {
   }
 
   endLevel(){
+    this.cancelNukeArm();
     const lv=LEVELS[this.currentLevel];
     const won=this.lemmingsSaved>=lv.need;
     if(won&&this.currentLevel+1>=this.unlockedLevels&&this.currentLevel+1<LEVELS.length){
@@ -926,9 +956,11 @@ class Game {
 
   handleScroll(){
     if(this.gameState!=='playing')return;
-    const edge=60,spd=4;
+    const edge=60,spd=4,kspd=8;
     if(this.mouseX<edge)this.scrollX=Math.max(0,this.scrollX-spd);
     else if(this.mouseX>VW-edge)this.scrollX=Math.min(W-VW,this.scrollX+spd);
+    if(this.scrollKeys.has('L'))this.scrollX=Math.max(0,this.scrollX-kspd);
+    if(this.scrollKeys.has('R'))this.scrollX=Math.min(W-VW,this.scrollX+kspd);
   }
 
   // ========== RENDERING ==========
@@ -1107,8 +1139,8 @@ class Game {
       <p style="color:#7fefab;font-size:10px;margin:12px 0">A browser tribute</p>
       <p>Guide the lemmings to safety!</p>
       <p>Click a lemming after selecting an ability</p>
-      <p style="margin-top:8px">Scroll: move mouse to screen edges</p>
-      <p>Keys: 1-8 abilities &middot; P pause &middot; F fast &middot; N nuke &middot; M mute</p>
+      <p style="margin-top:8px">Scroll: mouse to screen edges, arrow keys, or A / D</p>
+      <p>Keys: 1-8 abilities &middot; P pause &middot; F fast &middot; N nuke (&times;2) &middot; M mute</p>
       <p>Right-click deselects the current ability</p>
       <br>
       <button class="overlay-btn" onclick="game.showLevelSelect()">PLAY</button>

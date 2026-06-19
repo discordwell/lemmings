@@ -537,6 +537,53 @@ test('nuke closes the entrance and ends the level once everyone is gone',()=>{
   assertEq(g.gameState,'results','nuked level must still end');
 });
 
+test('the nuke needs a confirming second press, guarding against an accidental loss',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  for(let i=0;i<200;i++)g.update();           // release a few lemmings
+  g.requestNuke();
+  assert(!g.nuking,'a single nuke press must not fire the nuke');
+  assert(g.nukeArmed,'the first press should arm the nuke');
+  g.requestNuke();
+  assert(g.nuking,'the confirming second press should fire the nuke');
+  assert(!g.nukeArmed,'firing clears the armed flag');
+});
+
+test('an armed nuke can be cancelled before it fires',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  g.requestNuke();
+  assert(g.nukeArmed&&!g.nuking,'first press arms');
+  g.cancelNukeArm();
+  assert(!g.nukeArmed,'cancel disarms');
+  g.requestNuke();
+  assert(!g.nuking&&g.nukeArmed,'after a cancel, one press only re-arms (does not fire)');
+});
+
+test("keyboard 'N' arms then fires the nuke; Escape cancels an armed nuke",()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  const h=sb.window._handlers.keydown[sb.window._handlers.keydown.length-1];
+  const ev=key=>({key,repeat:false,preventDefault(){}});
+  h(ev('n'));
+  assert(g.nukeArmed&&!g.nuking,'first N should arm');
+  h(ev('Escape'));
+  assert(!g.nukeArmed,'Escape should disarm a pending nuke');
+  h(ev('n'));h(ev('n'));
+  assert(g.nuking,'two more N presses should fire the nuke');
+});
+
+test('the on-screen nuke button also honors the two-press confirm',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  // ctl() wires onclick to blur the target then call the handler.
+  const click=()=>sb.__els['btn-nuke'].onclick({currentTarget:{blur(){}}});
+  click();
+  assert(g.nukeArmed&&!g.nuking,'one button click should only arm the nuke');
+  click();
+  assert(g.nuking,'a second button click should fire the nuke');
+});
+
 // ---------- main loop (fixed timestep) ----------
 test('stepSim runs the sim at a fixed 60Hz regardless of frame rate',()=>{
   const STEP=T.STEP_MS;
@@ -633,6 +680,32 @@ test('release rate clamps to [10,99]',()=>{
   assertEq(g.releaseRate,10,'lower clamp');
   for(let i=0;i<30;i++)g.adjustRate(5);
   assertEq(g.releaseRate,99,'upper clamp');
+});
+
+test('arrow / A-D keys scroll the viewport and stop on key release',()=>{
+  const g=new T.Game();
+  g.loadLevel(0);
+  g.mouseX=400;            // keep the mouse off the edges so edge-scroll stays out of it
+  g.scrollX=400;           // mid-world, so both directions have room to move
+  const down=sb.window._handlers.keydown[sb.window._handlers.keydown.length-1];
+  const up=sb.window._handlers.keyup[sb.window._handlers.keyup.length-1];
+  const ev=key=>({key,repeat:false,preventDefault(){}});
+  down(ev('ArrowRight'));
+  g.handleScroll();
+  assert(g.scrollX>400,`holding Right should scroll right (x=${g.scrollX})`);
+  const afterRight=g.scrollX;
+  up(ev('ArrowRight'));
+  g.handleScroll();
+  assertEq(g.scrollX,afterRight,'releasing the key should stop scrolling');
+  down(ev('a'));           // A also scrolls left
+  g.handleScroll();
+  assert(g.scrollX<afterRight,`holding A should scroll left (x=${g.scrollX})`);
+  up(ev('a'));
+  // A fresh level clears any held scroll keys (a key held across a restart
+  // would otherwise keep scrolling with no keyup coming).
+  down(ev('ArrowRight'));
+  g.loadLevel(0);
+  assertEq(g.scrollKeys.size,0,'loading a level clears held scroll keys');
 });
 
 // ---------- persistence ----------

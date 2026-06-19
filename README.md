@@ -41,15 +41,19 @@ all stop at it.
 | Input | Action |
 |---|---|
 | Click ability, then click lemming | Assign ability |
-| Right-click | Deselect ability |
+| Right-click | Deselect ability (and disarm a pending nuke) |
 | `1`–`8` | Select ability |
 | `P` / `Space` | Pause |
 | `F` | Fast-forward (3×) |
-| `N` | Nuke (arms every lemming as a bomber) |
+| `N` | Nuke — **press twice** to confirm (arms every lemming as a bomber) |
 | `R` | Restart the current level |
 | `M` | Mute |
 | `-` / `=` | Release rate down / up |
+| `←` / `→` or `A` / `D` | Scroll the viewport |
 | Mouse at screen edge, or click minimap | Scroll |
+
+The nuke is instant and irreversible, so — like the original — it takes a
+confirming second press (`Esc` or right-click cancels a pending nuke).
 
 Five levels, unlocked in order; progress persists in `localStorage`.
 

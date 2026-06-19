@@ -64,6 +64,12 @@ lemming's state, check exit proximity (walkers only), cull out-of-bounds, then
 end the level when time runs out or when no active lemmings remain and either
 all were released or a nuke is in progress.
 
+The nuke is instant and irreversible, so the input layer guards it behind a
+confirming second press: `requestNuke()` arms (`nukeArmed`) on the first `N`/
+button press and only calls the real `startNuke()` on the second; `Esc` or
+right-click (`cancelNukeArm()`) disarms a pending nuke. `startNuke()` itself is
+unconditional, which keeps it the single point the simulation tests drive.
+
 ## Rendering
 
 `loop()` runs on `requestAnimationFrame`; `stepSim(dt)` advances the simulation
@@ -75,7 +81,11 @@ ticks at once. Per frame: cached sky canvas → terrain canvas slice →
 entrance/exit → procedurally drawn lemming sprites (`drawLemming`, a pile of
 `fillRect`s per state) → particles → minimap. The minimap redraws terrain into
 a pre-allocated `ImageData` each frame and overlays lemming dots, viewport box,
-and entrance/exit markers; clicking it jumps the viewport.
+and entrance/exit markers; clicking it jumps the viewport. The viewport also
+scrolls from the mouse at a screen edge and from held arrow / `A`-`D` keys —
+`handleScroll()` (called once per frame from `loop()`) applies both, reading a
+`scrollKeys` set that the keydown/keyup handlers maintain (a window `blur`
+clears it so a key held across a tab switch can't scroll forever).
 
 Audio is a tiny WebAudio synth (`SFX.play(type)`) — oscillators and noise
 buffers, no samples. `sfx.init()` must be called from a user gesture (browser
@@ -106,8 +116,9 @@ two layers:
   exit, some skills).
 - **Mechanics** — a physics scenario for each of the eight skills on hand-built
   terrain, steel invulnerability against both destructive skills and builders, a
-  blocker dropped when its footing is dug out, nuke flow, the fixed-timestep loop
-  (`stepSim`), ability auto-deselect, timer display, and persistence.
+  blocker dropped when its footing is dug out, nuke flow (including the
+  arm/confirm/cancel gate), the fixed-timestep loop (`stepSim`), held-key
+  viewport scrolling, ability auto-deselect, timer display, and persistence.
 
 Add a test alongside any physics or rules change; hand-built terrain via the
 `fill()` helper keeps scenarios deterministic (level generators sprinkle random
